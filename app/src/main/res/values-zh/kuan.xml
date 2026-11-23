@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="kuan_follow_up_select">选择一项</string>
+    <string name="kuan_follow_up_unresolved">还没有可用的答案。请检查选择，或在输入框直接回复。</string>
   <string name="kuan_app_name">宽 API 预览</string>
   <string name="kuan_account">宽 API</string>
   <string name="kuan_sign_in_action">登录宽 API</string>
@@ -48,4 +50,26 @@
   <string name="kuan_image_processing">正在生成图片</string>
   <string name="kuan_image_receiving">接收图片</string>
   <string name="kuan_image_complete">图片已生成</string>
+  <string name="kuan_import_history">导入宽 API 聊天</string>
+  <string name="kuan_import_cloud">账号备份</string>
+  <string name="kuan_import_zip">选择 ZIP</string>
+  <string name="kuan_import_result">更新 %1$d 个对话，新增 %2$d 条消息。跳过 %3$d 个对话，%4$d 个原件无法获取。</string>
+  <string name="kuan_attachment">附件</string>
+  <string name="kuan_open_file">打开</string>
+  <string name="kuan_save_as">另存为</string>
+  <string name="kuan_download_file">下载</string>
+  <string name="kuan_file_saved">已保存文件</string>
+  <string name="kuan_file_save_failed">保存文件失败</string>
+  <string name="kuan_file_not_shared">模型尚未交付可下载的原件。</string>
+  <string name="kuan_web_accounts">网页模型调度</string>
+  <string name="kuan_web_account">账号 %1$d %2$s</string>
+  <string name="kuan_web_active">%1$d 个进行中的请求</string>
+  <string name="kuan_web_unavailable">当前不可用</string>
+  <string name="kuan_web_disable">关闭账号 %1$d 的网页调度？</string>
+  <string name="kuan_web_enable">开启账号 %1$d 的网页调度？</string>
+  <string name="kuan_web_pricing">网页模型计费</string>
+  <string name="kuan_price_model">选择模型</string>
+  <string name="kuan_price_all_efforts">全部推理强度</string>
+  <string name="kuan_price_multiplier">扣费倍率</string>
+  <string name="kuan_price_minimum">最低扣费（美元）</string>
 </resources>

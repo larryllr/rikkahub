@@ -16,6 +16,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.saveUploadFromBytes
+import me.rerere.rikkahub.data.kuan.KuanHistory
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.sync.S3BackupItem
 import me.rerere.rikkahub.data.sync.S3Sync
@@ -30,13 +31,14 @@ import java.io.File
 
 private const val TAG = "BackupVM"
 
-class BackupVM(
+class BackupVM internal constructor(
     private val settingsStore: SettingsStore,
     private val webDavSync: WebDavSync,
     private val s3Sync: S3Sync,
     private val conversationRepository: ConversationRepository,
     private val filesManager: FilesManager,
     private val deepSeekMigrator: DeepSeekMigrator,
+    private val kuanHistory: KuanHistory,
 ) : ViewModel() {
     val settings = settingsStore.settingsFlow.stateIn(
         scope = viewModelScope,
@@ -175,6 +177,8 @@ class BackupVM(
     }
 
     suspend fun restoreFromDeepSeek(uri: Uri): DeepSeekImportResult = deepSeekMigrator.import(uri)
+
+    suspend fun importKuanHistory(uri: Uri?) = kuanHistory.import(uri)
 
     fun restoreFromCherryStudio(file: File) {
         val importProviders = CherryStudioProviderImporter.importProviders(file)

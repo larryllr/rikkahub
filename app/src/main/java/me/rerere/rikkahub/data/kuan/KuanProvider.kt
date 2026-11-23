@@ -66,9 +66,7 @@ internal class KuanProvider(
             model = canonical.copy(tools = canonical.tools.intersect(params.model.tools) - BuiltInTools.ImageGeneration),
             customHeaders = emptyList(),
             customBody = emptyList(),
-            reasoningLevel = params.reasoningLevel.takeIf {
-                it.effort in canonical.serverReasoningLevels.orEmpty()
-            } ?: ReasoningLevel.AUTO,
+            reasoningLevel = ReasoningLevel.AUTO,
             tools = if (route.lane == KuanLane.WEB) emptyList() else params.tools,
         )
         val cleanMessages = messages.map { message ->
@@ -77,6 +75,12 @@ internal class KuanProvider(
         val prepared = assets.attach(route.scope, cleanMessages)
         if (!session.isCurrent(route.scope, epoch)) throw KuanHttpError(401)
         val body = wire.streamingBody(resolved, prepared, updated).toMutableMap()
+        val effort = params.providerReasoningEffort?.takeIf { it in canonical.serverReasoningLevels.orEmpty() }
+        if (resolved.useResponseApi) {
+            val existingReasoning = (body["reasoning"] as? JsonObject)?.minus("effort").orEmpty()
+            val reasoning = if (effort == null) existingReasoning else existingReasoning + ("effort" to JsonPrimitive(effort))
+            if (reasoning.isEmpty()) body.remove("reasoning") else body["reasoning"] = JsonObject(reasoning)
+        } else if (effort == null) body.remove("reasoning_effort") else body["reasoning_effort"] = JsonPrimitive(effort)
         body.remove("include")
         body["store"] = JsonPrimitive(false)
         body["x_kuanapi_chat"] = buildJsonObject {

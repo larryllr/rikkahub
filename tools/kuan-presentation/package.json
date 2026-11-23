@@ -1,0 +1,17 @@
+{
+  "name": "kuan-native-presentation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild entry.mjs --bundle --format=iife --global-name=KuanPresentation --target=es2023 --platform=neutral --main-fields=module,main --minify --legal-comments=inline --outfile=../../app/src/main/assets/kuan-presentation.js",
+    "test": "node --test presentation.test.mjs"
+  },
+  "dependencies": {
+    "acorn": "8.15.0",
+    "acorn-jsx": "5.3.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.7"
+  }
+}

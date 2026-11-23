@@ -77,6 +77,7 @@ import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.kuan.kuanFormSource
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
@@ -123,6 +124,7 @@ fun ChatMessage(
     onClearTranslation: (UIMessage) -> Unit = {},
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
+    onDraftFollowUp: ((String) -> Unit)? = null,
 ) {
     val message = node.messages[node.selectIndex]
     if (message.isContextCheckpoint) {
@@ -162,7 +164,7 @@ fun ChatMessage(
         horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        if (!message.parts.isEmptyUIMessage()) {
+        if (!message.parts.isEmptyUIMessage() || message.parts.any { it is UIMessagePart.Text && it.kuanFormSource() != null }) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth(),
@@ -199,6 +201,16 @@ fun ChatMessage(
                 onToolAnswer = onToolAnswer,
                 onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
             )
+
+            if (message.role == MessageRole.ASSISTANT && !loading) {
+                message.parts.fastForEachIndexed { index, part ->
+                    if (part is UIMessagePart.Text && part.kuanFormSource() != null) {
+                        key(message.id, index) {
+                            KuanFollowUps(part, onDraftFollowUp)
+                        }
+                    }
+                }
+            }
 
             message.translation?.let { translation ->
                 CollapsibleTranslationText(

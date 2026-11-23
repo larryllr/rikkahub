@@ -29,6 +29,7 @@ data class ConversationConfig(
     val workspaceId: Uuid? = null,
     val enabledSkills: Set<String> = emptySet(),
     val managedGroup: String? = null,
+    val providerReasoningEffort: String? = null,
 )
 
 private fun Model.managedGroup(settings: Settings): String? =
@@ -38,6 +39,7 @@ private fun Model.managedGroup(settings: Settings): String? =
 private fun Assistant.toConversationConfig() = ConversationConfig(
     chatModelId = chatModelId,
     reasoningLevel = reasoningLevel,
+    providerReasoningEffort = providerReasoningEffort,
     enableWebSearch = enableWebSearch,
     mcpServers = mcpServers,
     workspaceId = workspaceId,
@@ -47,6 +49,7 @@ private fun Assistant.toConversationConfig() = ConversationConfig(
 private fun Assistant.withConversationConfig(config: ConversationConfig) = copy(
     chatModelId = config.chatModelId,
     reasoningLevel = config.reasoningLevel,
+    providerReasoningEffort = config.providerReasoningEffort,
     enableWebSearch = config.enableWebSearch,
     mcpServers = config.mcpServers,
     workspaceId = config.workspaceId,
@@ -71,6 +74,7 @@ fun Conversation.withAssistantUpdate(updated: Assistant, settings: Settings): Co
     } else {
         copy(
             config = updated.toConversationConfig().copy(
+                providerReasoningEffort = updated.providerReasoningEffort.takeIf { updated.chatModelId == config.chatModelId },
                 managedGroup = if (updated.chatModelId == config.chatModelId) config.managedGroup
                     else settings.findModelById(updated.chatModelId)?.managedGroup(settings),
                 builtInSearch = if (updated.chatModelId == config.chatModelId) {

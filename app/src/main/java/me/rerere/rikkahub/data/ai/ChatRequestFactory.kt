@@ -45,6 +45,9 @@ import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.kuan.KuanLane
+import me.rerere.rikkahub.data.kuan.finishKuanPresentation
+import me.rerere.rikkahub.data.kuan.KuanPresentationPreview
+import me.rerere.rikkahub.data.kuan.withKuanQuestionHistory
 import me.rerere.rikkahub.data.kuan.kuanRoute
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
@@ -153,6 +156,7 @@ class ChatRequestFactory(
             stream = turn.assistant.streamOutput,
             retry = if (turn.providerSetting.kuanRoute() == null) turn.settings.retryPolicy() else RetryPolicy.NONE,
         )
+        val presentation = KuanPresentationPreview(context).takeIf { turn.providerSetting.kuanRoute()?.lane == KuanLane.WEB }
         val hooks = object : AgentHooks {
             override suspend fun prepareStep(messages: List<UIMessage>): StepRequest {
                 Log.i(TAG, "prepareStep: ${turn.model.id}")
@@ -164,13 +168,15 @@ class ChatRequestFactory(
             }
 
             override suspend fun previewStep(message: UIMessage, newPartsFrom: Int) =
-                message.transformNewParts(newPartsFrom) {
-                    it.visualTransforms(outputTransformers, context, turn.model, turn.assistant, turn.settings)
+                message.transformNewParts(newPartsFrom) { messages ->
+                    val preview = if (presentation == null) messages else messages.map { presentation.render(it) }
+                    preview.visualTransforms(outputTransformers, context, turn.model, turn.assistant, turn.settings)
                 }
 
             override suspend fun finishStep(message: UIMessage, newPartsFrom: Int) =
-                message.transformNewParts(newPartsFrom) {
-                    it.transforms(outputTransformers, context, turn.model, turn.assistant, turn.settings)
+                message.transformNewParts(newPartsFrom) { messages ->
+                    val finished = if (presentation == null) messages else messages.map { finishKuanPresentation(context, it) }
+                    finished.transforms(outputTransformers, context, turn.model, turn.assistant, turn.settings)
                         .visualTransforms(outputTransformers, context, turn.model, turn.assistant, turn.settings)
                         .onGenerationFinish(outputTransformers, context, turn.model, turn.assistant, turn.settings)
                 }
@@ -275,7 +281,7 @@ class ChatRequestFactory(
                     add(UIMessage(role = MessageRole.USER, parts = earlierFiles, isSynthetic = true))
                 }
             }
-            addAll(recent)
+            addAll(recent.map { it.withKuanQuestionHistory() })
         }.transforms(
             transformers = if (turn.providerSetting.kuanRoute() == null) inputTransformers
                 else inputTransformers.filterNot { it === DocumentAsPromptTransformer || it === OcrTransformer },
@@ -293,6 +299,7 @@ class ChatRequestFactory(
             maxTokens = assistant.maxTokens,
             tools = turn.tools,
             reasoningLevel = assistant.reasoningLevel,
+            providerReasoningEffort = assistant.providerReasoningEffort,
             customHeaders = buildList {
                 addAll(assistant.customHeaders)
                 addAll(turn.model.customHeaders)

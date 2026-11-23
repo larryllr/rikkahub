@@ -501,6 +501,7 @@ private fun ChatPageContent(
                     inputState.editingMessage = null
                     inputState.setMessageText(suggestion)
                 },
+                onDraftFollowUp = inputState::appendText.takeUnless { inputState.isEditing() },
                 onTranslate = { message, locale ->
                     vm.translateMessage(message, locale)
                 },

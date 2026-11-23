@@ -75,6 +75,7 @@ data class TextGenerationParams(
     val customBody: List<CustomBody> = emptyList(),
     val sessionId: String? = Uuid.random().toString(),
     val backgroundTarget: BackgroundTarget? = null,
+    val providerReasoningEffort: String? = null,
 )
 
 @Serializable

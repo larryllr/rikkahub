@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -114,8 +115,10 @@ private fun parseModel(row: JsonObject, route: KuanRoute): Model? {
             ModelType.IMAGE
         else -> ModelType.CHAT
     }
-    val levels = row.array("supported_reasoning_levels")?.mapNotNull { (it as? JsonObject)?.string("effort") }
-        ?.distinct()
+    val levels = row.array("supported_reasoning_levels").orEmpty().mapNotNull {
+        ((it as? JsonObject)?.string("effort") ?: (it as? JsonPrimitive)?.contentOrNull)
+            ?.takeIf { effort -> effort.matches(Regex("[a-zA-Z0-9_.-]{1,40}")) }
+    }.distinct().take(18)
     val tools = row.strings("enabled_tools") + row.strings("tools") + row.strings("supported_tools")
     return Model(
         id = route.modelId(id),
@@ -126,7 +129,7 @@ private fun parseModel(row: JsonObject, route: KuanRoute): Model? {
             ?.takeIf { it in 1000..10_000_000 } ?: 32_768,
         serverReasoningLevels = levels,
         abilities = buildList {
-            if (!levels.isNullOrEmpty()) add(ModelAbility.REASONING)
+            if (levels.isNotEmpty()) add(ModelAbility.REASONING)
             if (route.lane == KuanLane.WORK && kind == ModelType.CHAT &&
                 (row.flag("supports_parallel_tool_calls") || tools.any { it in setOf("function", "function_calling", "tools") })
             ) add(ModelAbility.TOOL)
@@ -184,7 +187,10 @@ internal class KuanCatalog(
     suspend fun refresh(groupId: Long? = null, force: Boolean = false) = refreshLock.withLock {
         val profile = session.state.value.profile ?: return@withLock
         val epoch = session.state.value.epoch
-        if (currentScope != profile.scope) return@withLock
+        if (currentScope != profile.scope) {
+            currentScope = profile.scope
+            refreshedAt = 0L
+        }
         val before = mutableState.value
         if (!force && (groupId == null || groupId == before.groupId) &&
             System.currentTimeMillis() - refreshedAt < 60_000
@@ -199,7 +205,8 @@ internal class KuanCatalog(
                 val name = row.string("name")?.takeIf(String::isNotBlank) ?: return@mapNotNull null
                 KuanGroup(id, name, row.string("platform").orEmpty())
             }.distinctBy { it.id }
-            val selected = groups.firstOrNull { it.id == (groupId ?: before.groupId) } ?: groups.firstOrNull()
+            val selected = groups.firstOrNull { it.id == (groupId ?: before.groupId) }
+                ?: groups.firstOrNull().takeIf { groupId == null }
             mutableState.value = KuanCatalogState(groups, selected?.id, busy = true)
             val validIds = groups.mapTo(mutableSetOf()) { it.id }
             confirmed.value = confirmed.value.filterValues { it.kuanRoute()?.groupId in validIds }
@@ -210,6 +217,7 @@ internal class KuanCatalog(
                     route == null || route.scope == profile.scope && route.groupId in validIds
                 })
             }
+            if (groupId != null && selected == null) throw KuanHttpError(403, "GROUP_UNAVAILABLE")
             if (selected != null) {
                 val key = key(profile.scope, selected.id, refresh = force)
                 val payload = api.json("/v1/models?kuan_chat=1", bearer = key, envelope = false).asObject()
@@ -223,8 +231,19 @@ internal class KuanCatalog(
                     } + additions
                     val currentId = current.getCurrentAssistant().chatModelId ?: current.chatModelId
                     val existing = current.findModelById(currentId)
-                    val default = additions.asSequence().flatMap { it.models.asSequence() }.firstOrNull { it.type == ModelType.CHAT }
-                    current.copy(providers = providers, chatModelId = if (existing == null && default != null) default.id else current.chatModelId)
+                    val automatic = payload.array("data").orEmpty().mapNotNull { it as? JsonObject }
+                        .firstOrNull { it.string("kuan_web_lane") == "auto" }?.string("id")
+                    val candidates = additions.flatMap { it.models }.filter { it.type == ModelType.CHAT }
+                    val default = candidates.firstOrNull { it.modelId == automatic } ?: candidates.firstOrNull()
+                    val assistant = current.getCurrentAssistant()
+                    if (existing != null || default == null) current.copy(providers = providers)
+                    else current.copy(
+                        providers = providers,
+                        chatModelId = default.id,
+                        assistants = current.assistants.map {
+                            if (it.id == assistant.id) it.copy(chatModelId = default.id, providerReasoningEffort = null) else it
+                        },
+                    )
                 }
                 if (payload.obj("kuan_catalog")?.flag("stale") == true) {
                     mutableState.value = mutableState.value.copy(error = "Model catalog is temporarily stale")
@@ -270,6 +289,9 @@ internal class KuanCatalog(
         if (route.providerId != provider.id || route.modelId(model.modelId) != model.id) {
             throw KuanProtocolError("Model and group do not match")
         }
+        session.state.first { !it.loading }
+        if (session.state.value.profile?.scope != route.scope) throw KuanHttpError(401)
+        if (confirmed.value[route.providerId] == null) refresh(route.groupId, force = true)
         val valid = confirmed.value[route.providerId]
             ?.takeIf { it.kuanRoute() == route && it.models.any { m -> m.id == model.id } }
             ?: throw KuanProtocolError("This model is not in the active group catalog")

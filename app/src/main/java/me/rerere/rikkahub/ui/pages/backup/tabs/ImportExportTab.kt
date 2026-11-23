@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CancellationException
 import me.rerere.ui.toast.ToastType
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
@@ -29,9 +30,14 @@ import me.rerere.hugeicons.stroke.FileExport
 import me.rerere.hugeicons.stroke.FileImport
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.WebDavConfig
+import me.rerere.rikkahub.data.kuan.KuanHistoryResult
+import me.rerere.rikkahub.data.kuan.KuanSession
+import me.rerere.rikkahub.data.kuan.kuanUiMessage
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.sync.importer.DeepSeekImportResult
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
 import me.rerere.rikkahub.ui.pages.backup.components.BackupActionIcon
 import me.rerere.rikkahub.ui.pages.backup.components.backupContentItem
@@ -40,6 +46,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import org.koin.compose.koinInject
 
 @Composable
 fun ImportExportTab(
@@ -54,6 +61,26 @@ fun ImportExportTab(
     var isRestoring by remember { mutableStateOf(false) }
     var showImportConfirmDialog by remember { mutableStateOf(false) }
     var deepSeekImportResult by remember { mutableStateOf<DeepSeekImportResult?>(null) }
+    var kuanImport by remember { mutableStateOf<KuanHistoryResult?>(null) }
+    var showKuanSources by remember { mutableStateOf(false) }
+    val kuan = koinInject<KuanSession>()
+    val kuanSession by kuan.state.collectAsStateWithLifecycle()
+    val navigation = LocalNavController.current
+
+    fun importKuan(uri: android.net.Uri?) {
+        scope.launch {
+            isRestoring = true
+            try {
+                kuanImport = vm.importKuanHistory(uri)
+            } catch (cause: CancellationException) {
+                throw cause
+            } catch (cause: Exception) {
+                toaster.show(cause.kuanUiMessage(), type = ToastType.Error)
+            } finally {
+                isRestoring = false
+            }
+        }
+    }
 
     // 导入类型：local、chatbox、cherry、deepseek
     var importType by remember { mutableStateOf("local") }
@@ -100,6 +127,10 @@ fun ImportExportTab(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let { sourceUri ->
+            if (importType == "kuan") {
+                importKuan(sourceUri)
+                return@let
+            }
             scope.launch {
                 isRestoring = true
                 runCatching {
@@ -249,6 +280,18 @@ fun ImportExportTab(
             title = { Text(stringResource(R.string.backup_page_import_from_other_app)) },
         ) {
             item(
+                onClick = if (!isRestoring && !kuanSession.loading) {
+                    {
+                        if (kuanSession.profile == null) navigation.navigate(Screen.KuanAccount)
+                        else showKuanSources = true
+                    }
+                } else null,
+                headlineContent = { Text(stringResource(R.string.kuan_import_history)) },
+                leadingContent = {
+                    BackupActionIcon(HugeIcons.FileImport, loading = isRestoring && importType == "kuan")
+                },
+            )
+            item(
                 onClick = if (!isRestoring) {
                     {
                         importType = "deepseek"
@@ -292,6 +335,39 @@ fun ImportExportTab(
                 },
             )
         }
+    }
+
+    if (showKuanSources) {
+        AlertDialog(
+            onDismissRequest = { showKuanSources = false },
+            title = { Text(stringResource(R.string.kuan_import_history)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showKuanSources = false
+                    importType = "kuan"
+                    importKuan(null)
+                }) { Text(stringResource(R.string.kuan_import_cloud)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showKuanSources = false
+                    importType = "kuan"
+                    openDocumentLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
+                }) { Text(stringResource(R.string.kuan_import_zip)) }
+            },
+        )
+    }
+    kuanImport?.let { result ->
+        AlertDialog(
+            onDismissRequest = { kuanImport = null },
+            title = { Text(stringResource(R.string.kuan_import_history)) },
+            text = { Text(stringResource(
+                R.string.kuan_import_result, result.conversations, result.messages, result.skipped, result.missingFiles,
+            )) },
+            confirmButton = {
+                TextButton(onClick = { kuanImport = null }) { Text(stringResource(R.string.confirm)) }
+            },
+        )
     }
 
     deepSeekImportResult?.let { result ->

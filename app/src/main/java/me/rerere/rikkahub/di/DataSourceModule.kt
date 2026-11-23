@@ -30,6 +30,8 @@ import me.rerere.rikkahub.data.kuan.KuanApi
 import me.rerere.rikkahub.data.kuan.KuanAssets
 import me.rerere.rikkahub.data.kuan.KuanCatalog
 import me.rerere.rikkahub.data.kuan.KuanJobs
+import me.rerere.rikkahub.data.kuan.KuanFiles
+import me.rerere.rikkahub.data.kuan.KuanHistory
 import me.rerere.rikkahub.data.kuan.KuanOperations
 import me.rerere.rikkahub.data.kuan.KuanProvider
 import me.rerere.rikkahub.data.kuan.KuanSession
@@ -67,8 +69,10 @@ val dataSourceModule = module {
     single { KuanSession(get(), get(), get()) }
     single { KuanCatalog(get(), get(), get(), get()) }
     single { KuanAssets(get(), get(), get(), get()) }
-    single { KuanOperations(get()) }
+    single { KuanOperations(get(), get()) }
     single { KuanJobs(get(), get(), get()) }
+    single { KuanFiles(get(), get(), get(), get()) }
+    single { KuanHistory(get(), get(), get(), get(), get(), get()) }
     single { KuanProvider(get(), get(), get(), get(), get()) }
 
     single {

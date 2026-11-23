@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="kuan_follow_up_select">Select an option</string>
+    <string name="kuan_follow_up_unresolved">An answer is required. Check your selections or reply in the composer.</string>
   <string name="kuan_app_name">Kuan API Preview</string>
   <string name="kuan_account">Kuan API</string>
   <string name="kuan_sign_in_action">Sign in to Kuan API</string>
@@ -48,4 +50,26 @@
   <string name="kuan_image_processing">Generating image</string>
   <string name="kuan_image_receiving">Receiving image</string>
   <string name="kuan_image_complete">Image ready</string>
+  <string name="kuan_import_history">Import Kuan API chats</string>
+  <string name="kuan_import_cloud">Account backup</string>
+  <string name="kuan_import_zip">Choose ZIP</string>
+  <string name="kuan_import_result">Updated %1$d chats and added %2$d messages. %3$d chats skipped and %4$d original files unavailable.</string>
+  <string name="kuan_attachment">Attachment</string>
+  <string name="kuan_open_file">Open</string>
+  <string name="kuan_save_as">Save as</string>
+  <string name="kuan_download_file">Download</string>
+  <string name="kuan_file_saved">File saved</string>
+  <string name="kuan_file_save_failed">Could not save the file</string>
+  <string name="kuan_file_not_shared">The model has yet to provide a downloadable file.</string>
+  <string name="kuan_web_accounts">Web model accounts</string>
+  <string name="kuan_web_account">Account %1$d %2$s</string>
+  <string name="kuan_web_active">%1$d active requests</string>
+  <string name="kuan_web_unavailable">Unavailable</string>
+  <string name="kuan_web_disable">Disable web scheduling for account %1$d?</string>
+  <string name="kuan_web_enable">Enable web scheduling for account %1$d?</string>
+  <string name="kuan_web_pricing">Web model pricing</string>
+  <string name="kuan_price_model">Select model</string>
+  <string name="kuan_price_all_efforts">All reasoning levels</string>
+  <string name="kuan_price_multiplier">Price multiplier</string>
+  <string name="kuan_price_minimum">Minimum charge (USD)</string>
 </resources>

@@ -4,6 +4,8 @@
 > [change map](docs/kuan/CHANGE-MAP.md), and [audit handoff](docs/kuan/AUDIT-HANDOFF.md).
 > The original notices and AGPL-3.0 license remain in this source tree.
 
+> **Kuan API Android preview** · Independent fork from RikkaHub 3.3.1. For this build, use the [changes and rollback guide](docs/kuan/CHANGE-MAP.md), [feature comparison](docs/kuan/FEATURE-MATRIX.md), [build instructions](docs/kuan/BUILD.md), and [audit handoff](docs/kuan/AUDIT-HANDOFF.md). The download links below belong to upstream RikkaHub.
+
 <div align="center">
   <img src="docs/icon.png" alt="App Icon" width="100" />
   <h1>RikkaHub</h1>

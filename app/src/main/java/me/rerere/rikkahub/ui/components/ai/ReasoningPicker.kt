@@ -49,6 +49,7 @@ import me.rerere.ui.icons.ReasoningMedium
 import kotlin.math.roundToInt
 
 private val levels = ReasoningLevel.entries
+private data class SliderEffort(val key: String?, val visual: ReasoningLevel, val label: String? = null)
 
 @Composable
 fun ReasoningButton(
@@ -58,21 +59,55 @@ fun ReasoningButton(
     onUpdateReasoningLevel: (ReasoningLevel) -> Unit,
     availableLevels: List<ReasoningLevel> = levels,
 ) {
-    var showPicker by remember { mutableStateOf(false) }
-
     val selected = reasoningLevel.takeIf { it in availableLevels } ?: availableLevels.firstOrNull() ?: ReasoningLevel.AUTO
-    if (showPicker && availableLevels.size > 1) {
-        ReasoningPicker(
-            reasoningLevel = selected,
-            availableLevels = availableLevels,
+    val options = remember(availableLevels) { availableLevels.map { SliderEffort(it.effort, it) } }
+    ReasoningSelector(options, selected.effort, modifier, onlyIcon) { onUpdateReasoningLevel(it.visual) }
+}
+
+@Composable
+internal fun ManagedReasoningButton(
+    efforts: List<String>,
+    selection: String?,
+    onSelect: (String?) -> Unit,
+) {
+    val options = remember(efforts) {
+        val offered = efforts.filter { it != "auto" }.distinct()
+        listOf(SliderEffort(null, ReasoningLevel.AUTO)) + offered.mapIndexed { index, effort ->
+            val visual = ReasoningLevel.entries.firstOrNull { it.effort == effort }
+                ?: when {
+                    index == 0 -> ReasoningLevel.LOW
+                    index == offered.lastIndex -> ReasoningLevel.HIGH
+                    else -> ReasoningLevel.MEDIUM
+                }
+            SliderEffort(effort, visual,
+                if (visual.effort == effort) null else effort.replace('_', ' ').replaceFirstChar { it.titlecase() })
+        }
+    }
+    if (options.size > 1) ReasoningSelector(options, selection, Modifier, true) { onSelect(it.key) }
+}
+
+@Composable
+private fun ReasoningSelector(
+    options: List<SliderEffort>,
+    selection: String?,
+    modifier: Modifier,
+    onlyIcon: Boolean,
+    onSelect: (SliderEffort) -> Unit,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val selected = options.firstOrNull { it.key == selection } ?: options.firstOrNull() ?: return
+    if (showPicker && options.size > 1) {
+        ReasoningSlider(
+            options = options,
+            selected = selected,
             onDismissRequest = { showPicker = false },
-            onUpdateReasoningLevel = onUpdateReasoningLevel
+            onSelect = onSelect,
         )
     }
 
     ToggleSurface(
-        checked = selected.isEnabled,
-        onClick = { if (availableLevels.size > 1) showPicker = true },
+        checked = selected.visual.isEnabled,
+        onClick = { if (options.size > 1) showPicker = true },
         modifier = modifier,
     ) {
         Row(
@@ -84,7 +119,7 @@ fun ReasoningButton(
                 modifier = Modifier.size(24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(selected.icon(), null)
+                Icon(selected.visual.icon(), null)
             }
             if (!onlyIcon) Text(stringResource(R.string.setting_provider_page_reasoning))
         }
@@ -98,11 +133,24 @@ fun ReasoningPicker(
     onUpdateReasoningLevel: (ReasoningLevel) -> Unit,
     availableLevels: List<ReasoningLevel> = levels,
 ) {
-    val levels = availableLevels.takeIf { it.size > 1 } ?: return
-    val levelCount = levels.size
-    val levelShapes = remember(levels) { levels.map { it.shape() } }
-    val currentIndex = levels.indexOf(reasoningLevel).coerceAtLeast(0)
-    val sliderState = remember(levels) {
+    val options = remember(availableLevels) { availableLevels.map { SliderEffort(it.effort, it) } }
+    ReasoningSlider(options, SliderEffort(reasoningLevel.effort, reasoningLevel), onDismissRequest) {
+        onUpdateReasoningLevel(it.visual)
+    }
+}
+
+@Composable
+private fun ReasoningSlider(
+    options: List<SliderEffort>,
+    selected: SliderEffort,
+    onDismissRequest: () -> Unit,
+    onSelect: (SliderEffort) -> Unit,
+) {
+    val levelCount = options.size
+    if (levelCount < 2) return
+    val levelShapes = remember(options) { options.map { it.visual.shape() } }
+    val currentIndex = options.indexOf(selected).coerceAtLeast(0)
+    val sliderState = remember(options) {
         SliderState(
             value = currentIndex.toFloat(),
             trackRange = 0f..(levelCount - 1).toFloat(),
@@ -112,7 +160,9 @@ fun ReasoningPicker(
     val interactionSource = remember { MutableInteractionSource() }
     val hapticFeedback = LocalHapticFeedback.current
     // 拖动过程中就跟随滑块预览，松手后才真正提交
-    val previewLevel = levels[sliderState.value.roundToInt().coerceIn(0, levelCount - 1)]
+    val index = sliderState.value.roundToInt().coerceIn(0, levelCount - 1)
+    val preview = options[index]
+    val previewLevel = preview.visual
 
     LaunchedEffect(currentIndex) {
         sliderState.value = currentIndex.toFloat()
@@ -137,14 +187,14 @@ fun ReasoningPicker(
         ) {
             PickerValueHeader(
                 title = stringResource(R.string.reasoning_picker_title),
-                value = previewLevel,
+                value = index,
                 hint = stringResource(R.string.reasoning_picker_hint),
-                label = { it.label() },
+                label = { options[it].label ?: options[it].visual.label() },
             ) {
                 // 等级越高形状越「激烈」
                 PickerHero(
                     shapes = levelShapes,
-                    index = levels.indexOf(previewLevel),
+                    index = index,
                     icon = previewLevel.icon(),
                     containerColor = when {
                         !previewLevel.isEnabled -> MaterialTheme.colorScheme.surfaceContainerHighest
@@ -165,7 +215,7 @@ fun ReasoningPicker(
                 onValueChangeFinished = {
                     val snappedIndex = sliderState.value.roundToInt().coerceIn(0, levelCount - 1)
                     sliderState.value = snappedIndex.toFloat()
-                    onUpdateReasoningLevel(levels[snappedIndex])
+                    onSelect(options[snappedIndex])
                 },
                 modifier = Modifier.fillMaxWidth(),
                 interactionSource = interactionSource,

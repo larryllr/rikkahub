@@ -4,6 +4,8 @@ import me.rerere.rikkahub.data.kuan.KuanJobs
 import me.rerere.rikkahub.data.kuan.KuanJobRecord
 import me.rerere.rikkahub.data.kuan.KuanProtocolError
 import me.rerere.rikkahub.data.kuan.kuanRoute
+import me.rerere.rikkahub.data.kuan.finishKuanPresentation
+import me.rerere.rikkahub.data.kuan.KuanPresentationPreview
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.StreamChunkHandler
 import kotlin.time.Clock
@@ -320,6 +322,27 @@ class ChatService internal constructor(
         }
     }
 
+    internal suspend fun mergeKuanHistory(imported: Conversation): Int = withLoadedSession(imported.id) { session ->
+        if (kuanJobs.pending(imported.id) != null) return@withLoadedSession 0
+        var added = 0
+        synchronized(session) {
+            if (!session.canStartNextTurn) return@synchronized
+            session.update { current ->
+                val ids = current.messageNodes.flatMap { it.messages }.mapTo(HashSet()) { it.id }
+                val newNodes = imported.messageNodes.filter { it.currentMessage?.id?.let(ids::add) == true }
+                added = newNodes.size
+                if (added == 0) current else if (current.messageNodes.isEmpty() && current.title.isBlank()) {
+                    imported.copy(messageNodes = newNodes)
+                } else {
+                    // Do not reorder existing branches or invalidate a context checkpoint.
+                    current.copy(messageNodes = current.messageNodes + newNodes, updateAt = maxOf(current.updateAt, imported.updateAt))
+                }
+            }
+        }
+        if (added > 0) session.flush()
+        added
+    }
+
     private suspend fun restoreKuanJob(session: ConversationSession) {
         if (!session.canStartNextTurn) return
         val record = kuanJobs.pending(session.id) ?: return
@@ -333,20 +356,24 @@ class ChatService internal constructor(
                         modelId = model.id, parts = emptyList())
                     var message = base
                     var handler = StreamChunkHandler(model)
+                    var presentation = if (record.protocol == "chat_completions") KuanPresentationPreview(context) else null
                     session.replyMessageId.value = record.message
                     kuanJobs.events(record).collect { event ->
                         if (event == StreamChunk.ResetAttempt) {
                             handler = StreamChunkHandler(model)
                             message = base
+                            presentation = presentation?.let { KuanPresentationPreview(context) }
                         } else {
                             message = handler.handle(listOf(message), event).single()
                         }
+                        val visible = presentation?.render(message) ?: message
                         session.update { latest ->
                             if (!latest.canAttach(record)) throw KuanProtocolError("Conversation branch changed during recovery")
-                            latest.upsertMessage(record.node, message)
+                            latest.upsertMessage(record.node, visible)
                         }
                     }
-                    val finished = filesManager.convertBase64ImagePartToLocalFile(message).copy(
+                    val completed = if (record.protocol == "chat_completions") finishKuanPresentation(context, message) else message
+                    val finished = filesManager.convertBase64ImagePartToLocalFile(completed).copy(
                         finishedAt = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()),
                     )
                     session.update { latest ->

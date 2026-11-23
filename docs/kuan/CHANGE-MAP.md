@@ -14,7 +14,13 @@
 | F01 | `data/kuan/KuanAssets.kt`：只上传受管理目录里的原件，流式文件体，回执校验 SHA-256 和大小；两个 OpenAI encoder 接已验证的 `kuan-asset://...`；跳过托管路线本地文本替换，从压缩前消息补回仍存在的附件。 | 保留源文件与原始文件名、后缀，引用不进另一账号；不用持久化明文 Key。撤掉此项会退回上游本地解析，不再具备相同历史文件和扫描件语义，不可假称等价。测试 PDF、图片、200 件历史、过期和错误 MIME。 |
 | U01 | `utils/UpdateChecker.kt`、`ui/pages/setting/KuanUpdateGroup.kt`、GitHub manifest 安装权限。替换上游更新源，候选清单默认关闭，校验摘要及已安装证书。 | UI 可放原有设置，但不要恢复上游 URL 或指向现网旧 APK。撤销先关闭独立预览发布清单，避免安装不匹配；验证相同签名正常升级、异证书/截断/错 ABI/旧版拒绝、普通 Android 安装确认。 |
 | S01 | `web/WebServerManager.kt`、`WebApiModule.kt`：绑定宽 API 本机档案后，内置 Web 仅在回环且设密码时暴露 API，已有开放服务也运行时复核。 | 保留 RikkaHub 原功能但不能因开启局域网模式泄露托管对话或账户调用权限。回退托管功能前不要拆此检查。分别测 BYOK、回环有密码、LAN 无密码、登录时已启动、登出后仍受保护。 |
+| H01 | `data/kuan/KuanHistory.kt::{import,readKuanArchive}`、`KuanFiles.kt::cloudArchive`、`ChatService.kt::mergeKuanHistory`、`ui/pages/backup/BackupVM.kt` 和 `tabs/ImportExportTab.kt` 提供旧格式 ZIP 或当前账号云备份导入。 | 先撤备份页入口和 DI，保留本机已导入的正常 RikkaHub 对话。导入逐个会话增量落盘，稳定 ID 去重，ZIP 有条目和字节上限，账号云备份先核对摘要。旧格式只有平铺消息，可用原件原样导入，缺失件显示占位。 |
+| F02 | `data/kuan/KuanFiles.kt::{kuanFileLink,save,cached}`、`ui/components/richtext/KuanFileLinks.kt`、`RouteActivity.kt` 的链接处理。 | 识别自有域下载地址和人工可下载附件，旧 HTTP 链接归到固定 HTTPS 源。下载保留文件名和字节，系统应用从临时授权 URI 打开，另存在系统文件页。回退可移除对应链接入口，`KuanHistory` 继续复用文件仓储及账号云备份。 |
+| A03 | `KuanOperations.kt::{webAccounts,setWebAccount,billing,savePrice}` 与 `ui/pages/setting/KuanAdminTools.kt` 接入网页账号调度、模型及推理档费率和最低金额。 | 先读服务端版本再按当前 revision 提交，UI 操作可从账号页独立撤回。默认费率保留，其他模型和档位记录随原策略提交。分组管理和原生 Dashboard 分别使用各自接口。 |
+| M03 | `KuanCatalog.kt` 取实时推理档，`Assistant.kt`、`ConversationConfig.kt` 保存选值，`ChatInput.kt` 和 `ReasoningPicker.kt::ManagedReasoningButton` 复用上游滑块，`KuanProvider.kt::streamText` 传原始 effort。 | 目录缺档时发送路由使用服务端默认，切模型清理不适用的快照。移除此项可先恢复原滑块绑定，随后拆序列化字段与 wire 参数；保留本机旧档案可读。 |
+| P01 | `tools/kuan-presentation`、`data/kuan/KuanPresentation.kt`、`ChatRequestFactory.kt` 与 `ChatService.kt::restoreKuanJob` 以受限解析器把富输出投影为 Markdown 与题目数据。 `ChatMessage.kt`、`KuanFollowUps.kt`、`ChatList.kt` 和 `ChatPage.kt` 用原生输入控件呈现真实题干与选项并追加草稿。 | 如需独立撤回，要一起拆流式和结束时的投影及 UI 回调；历史回复中的元数据留作兼容读取。解析器只解释声明式字段，副作用交给原聊天发送，用户仍可直接写文字。 |
 | V01 | `app/src/test/.../data/kuan/KuanContractsTest.kt`：动态目录、群组身份、附件序列化、流结束、更新源校验。 | 源码断言不等于真实账号、安装或支付验收。按交付验收表追加设备与服务器隔离试验，不用现网改数据凑结果。 |
+| V02 | `app/src/androidTest/.../data/kuan/{KuanNativeContractTest,KuanFollowUpsTest}.kt` 和 `tools/kuan-presentation/presentation.test.mjs`。 | 以合成账号核对分组密钥、原件、回执、重复导入和实际 Compose 交互。脚本覆盖前后链接、源码、公式、多题和手填输入。 |
 
 ## 分阶段撤回方法
 

@@ -6,22 +6,35 @@
 
 - 上游：<https://github.com/rikkahub/rikkahub/tree/2435dbdf4690fe26d424b8d1ab778bcde9c6cd75>，标签 `3.3.1`。
 - 基准宽 API 正式 Android：`1.6.10 / code 33`，Chat 资源 `7fedc4145d4207ee1a0a`，来源是两个域名的公开清单。本分支不会改它们。
-- 候选身份：`com.kuanapi.app.nativepreview`，`2.0.0-preview.1 / code 1`；Debug 变体额外有 `.debug`。候选与旧宽 API、原 RikkaHub 并存，不能覆盖安装或访问它们的私有目录。
+- 候选包名为 `com.kuanapi.app.nativepreview`，版本为 `2.0.0-preview.2 / code 2`，Debug 变体额外有 `.debug`。候选可以与旧宽 API、原 RikkaHub 并装，由 Android 分别管理私有目录。
 - 对应客户端源保留 AGPL-3.0 和原作者版权，参见根目录 `LICENSE`。对外分发派生 APK 时同时提供与安装包精确对应的完整源码、补丁、许可证和构建步骤。此仓只调用服务端 HTTP 公开接口，不包含私有服务端源码、数据库、用户内容、生产签名或配置。
 
 ## 构建要求
 
 JDK 21，Gradle 9.6.0（仓库 wrapper），AGP 9.4.0，Kotlin 2.4.21。安装 Android SDK `platforms;android-37.2`、`platforms;android-37.0`、`build-tools;37.0.0`、`platform-tools`，CMake 3.22.1 和 Gradle 根据 AGP 请求的 NDK。Node 22+ / pnpm 11，先执行 `web-ui` 冻结依赖安装，即使只用安卓，也要编译上游手机 Web 服务资源。最小 Android API 26；GitHub 渠道包含上游 Phone Use，Play 渠道不自更新。工具或能力仍须用户主动授权。
 
+本分支移除了上游 Firebase 统计及其 Gradle 构建依赖，不需要上游 README 提到的 `app/google-services.json`。
+
 ```powershell
 corepack pnpm --dir web-ui install --frozen-lockfile
+npm --prefix tools/kuan-presentation ci
+npm --prefix tools/kuan-presentation test
+npm --prefix tools/kuan-presentation run build
 .\gradlew.bat --console=plain :app:assembleGithubDebug :app:testGithubDebugUnitTest
 .\gradlew.bat --console=plain :app:assembleGithubRelease
 ```
 
 设置 `JAVA_HOME` 与 `ANDROID_HOME`，IDE 用户可用本地 SDK。Windows 非 ASCII 路径如触发 AGP 路径检查，以命令行传入 `-Pandroid.overridePathCheck=true`；CMake 若仍不支持该路径，用 ASCII 路径的独立检出。Gradle 镜像下载必须对比 Gradle 官方 SHA-256，不随意替换 AGP、Kotlin、SDK 或上游依赖版本。不要在携带生产密钥的进程环境下构建。
 
-Windows 若因路径编码导致 Gradle JVM test worker 加载失败，可用 `--no-configuration-cache -I tools/kuan-jvm-classpath.gradle :app:writeKuanJvmClasspath` 导出同一 Android 变体的编译后测试类路径（`app/build/kuan-jvm-classpath.txt`）。将每条路径转成同一机器可访问的 ASCII 路径，以 `;` 分隔并不加空格，Java argfile 传入 `-cp` 和引号包裹的类路径，然后运行 `org.junit.runner.JUnitCore` 加上测试类全名。此方法与 APK 编译、Lint、设备验收分开；只能据此报告实际执行的测试类。上游仍有 `sqlite-android:-SNAPSHOT`；两台干净机器的依赖锁定和字节可重现性不是本次已验证结论。
+Windows 若因路径编码导致 Gradle JVM test worker 加载失败，显式执行 `--no-configuration-cache -I tools/kuan-jvm-classpath.gradle :ai:bundleLibRuntimeToJarDebug :app:writeKuanJvmClasspath`。它会更新 `:ai` 的运行时 JAR 并导出测试类路径到 `app/build/kuan-jvm-classpath.txt`。在 Java argfile 中为 `-cp` 提供用引号包裹的 ASCII 路径，各路径以分号连接，再运行 `org.junit.runner.JUnitCore` 加测试类全名。上游依赖含 `sqlite-android:-SNAPSHOT`，当前构建记录覆盖这台机器的依赖集。
+
+Android 设备用例使用 `:app:assembleGithubDebugAndroidTest`。安装 Debug 和测试 APK 后，在测试设备运行以下用例。夹具在 OkHttp 拦截请求并返回合成数据。
+
+```powershell
+adb -s <test-device> shell am instrument -w -r -e class "me.rerere.rikkahub.data.kuan.KuanNativeContractTest,me.rerere.rikkahub.data.kuan.KuanFollowUpsTest" com.kuanapi.app.nativepreview.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+`tools/kuan-presentation` 是 `app/src/main/assets/kuan-presentation.js` 的对应源码。它源于宽 API 维护仓的 `frontend/openui/{web-presentation,declarative-forms}.mjs`，维护基准记录为 `45c62fb5380a9d2608b10ecbb42810ae2f79f1c8`。本次扩展了动作标识、空值输入和历史文本投影。仓内包含 Acorn 8.15.0 和 Acorn JSX 5.3.2 的许可证文本与 npm 锁定记录。
 
 默认 Debug 使用本机 debug 签名，不能作为发布签名。RikkaHub 上游的 release 构建可通过本机忽略的 `local.properties` 提供 `storeFile`、`storePassword`、`keyAlias`、`keyPassword`。也可在输出未签名 APK 后用 SDK 的 `zipalign` 和 `apksigner` 独立签名；只用候选专用密钥，不用正式宽 API 或 RikkaHub 签名。不要把密钥或含密钥的配置写进命令历史、审计包或源码。
 

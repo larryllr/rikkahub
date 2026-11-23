@@ -207,6 +207,7 @@ internal fun KuanAccountPage() {
                                 }
                             }
                         }
+                        item(key = "kuanWebOperations") { KuanAdminTools(operations) }
                     }
                 }
                 item { KuanUpdateGroup() }

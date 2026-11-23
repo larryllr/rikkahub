@@ -1,3 +1,5 @@
+> **宽 API Android 原生预览**：基于 RikkaHub 3.3.1 的独立派生。参见[功能差异](docs/kuan/FEATURE-MATRIX.md)、[改动及撤回](docs/kuan/CHANGE-MAP.md)、[构建说明](docs/kuan/BUILD.md)和[审计与美学交接](docs/kuan/AUDIT-HANDOFF.md)。下方是上游 RikkaHub 的介绍及下载。
+
 <div align="center">
   <img src="docs/icon.png" alt="App 图标" width="100" />
   <h1>RikkaHub</h1>

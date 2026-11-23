@@ -99,6 +99,7 @@ fun ChatList(
     onDelete: (UIMessage) -> Unit = {},
     onUpdateMessage: (MessageNode) -> Unit = {},
     onClickSuggestion: (String) -> Unit = {},
+    onDraftFollowUp: ((String) -> Unit)? = null,
     onTranslate: ((UIMessage, java.util.Locale) -> Unit)? = null,
     onClearTranslation: (UIMessage) -> Unit = {},
     onJumpToMessage: (Int) -> Unit = {},
@@ -159,6 +160,7 @@ fun ChatList(
                 onDelete = onDelete,
                 onUpdateMessage = onUpdateMessage,
                 onClickSuggestion = onClickSuggestion,
+                onDraftFollowUp = onDraftFollowUp,
                 onTranslate = onTranslate,
                 onClearTranslation = onClearTranslation,
                 onToolApproval = onToolApproval,
@@ -231,6 +233,7 @@ private fun ChatListNormal(
     onDelete: (UIMessage) -> Unit,
     onUpdateMessage: (MessageNode) -> Unit,
     onClickSuggestion: (String) -> Unit,
+    onDraftFollowUp: ((String) -> Unit)?,
     onTranslate: ((UIMessage, java.util.Locale) -> Unit)?,
     onClearTranslation: (UIMessage) -> Unit,
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
@@ -401,6 +404,7 @@ private fun ChatListNormal(
                             onClearTranslation = onClearTranslation,
                             onToolApproval = onToolApproval,
                             onToolAnswer = onToolAnswer,
+                            onDraftFollowUp = onDraftFollowUp.takeUnless { selectionState.selecting || loading },
                             lastMessage = index == lastMessageIndex,
                         )
                     }

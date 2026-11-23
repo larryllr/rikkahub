@@ -305,14 +305,14 @@ fun ChatInput(
                                 )
 
                                 // Reasoning
-                                if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
+                                val managedEfforts = chatModel?.serverReasoningLevels
+                                if (managedEfforts != null) {
+                                    ManagedReasoningButton(managedEfforts, assistant.providerReasoningEffort) {
+                                        onUpdateAssistant(assistant.copy(providerReasoningEffort = it))
+                                    }
+                                } else if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
                                     ReasoningButton(
                                         reasoningLevel = assistant.reasoningLevel,
-                                        availableLevels = chatModel.serverReasoningLevels?.let { efforts ->
-                                            me.rerere.ai.core.ReasoningLevel.entries.filter {
-                                                it == me.rerere.ai.core.ReasoningLevel.AUTO || it.effort in efforts
-                                            }
-                                        } ?: me.rerere.ai.core.ReasoningLevel.entries,
                                         onUpdateReasoningLevel = {
                                             onUpdateAssistant(assistant.copy(reasoningLevel = it))
                                         },

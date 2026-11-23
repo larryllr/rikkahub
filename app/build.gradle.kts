@@ -24,8 +24,8 @@ android {
         applicationId = "com.kuanapi.app.nativepreview"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "2.0.0-preview.1"
+        versionCode = 2
+        versionName = "2.0.0-preview.2"
         val updateManifest = providers.gradleProperty("kuanUpdateManifest").orElse("").get()
         require(updateManifest.isEmpty() || updateManifest.matches(Regex("https://[a-zA-Z0-9./_-]+"))) {
             "kuanUpdateManifest must be an HTTPS manifest URL without credentials or query parameters"
