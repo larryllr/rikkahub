@@ -1,12 +1,12 @@
 # 宽 API 原生候选：构建与验收
 
-记录日期：2026-11-23（北京时间）。这是 RikkaHub 3.3.1 的本地派生工作，不是宽 API 线上发布。
+记录日期：2026-11-23（北京时间）。此分支从 RikkaHub 3.3.1 派生，宽 API 2.0 使用与经典版分离的分发渠道。见 [2.0 发布与撤回](RELEASE-2.0.md)。
 
 ## 源码与版本
 
 - 上游：<https://github.com/rikkahub/rikkahub/tree/2435dbdf4690fe26d424b8d1ab778bcde9c6cd75>，标签 `3.3.1`。
 - 基准宽 API 正式 Android：`1.6.10 / code 33`，Chat 资源 `7fedc4145d4207ee1a0a`，来源是两个域名的公开清单。本分支不会改它们。
-- 候选包名为 `com.kuanapi.app.nativepreview`，版本为 `2.0.0-preview.2 / code 2`，Debug 变体额外有 `.debug`。候选可以与旧宽 API、原 RikkaHub 并装，由 Android 分别管理私有目录。
+- 2.0 保留预览的包名 `com.kuanapi.app.nativepreview`，版本为 `2.0.0 / code 3`，Debug 变体额外有 `.debug`。它与经典宽 API `com.kuanapi.app` 及官方 RikkaHub 并装；用原生版签名可升级宽 API 原生预览。
 - 对应客户端源保留 AGPL-3.0 和原作者版权，参见根目录 `LICENSE`。对外分发派生 APK 时同时提供与安装包精确对应的完整源码、补丁、许可证和构建步骤。此仓只调用服务端 HTTP 公开接口，不包含私有服务端源码、数据库、用户内容、生产签名或配置。
 
 ## 构建要求
@@ -42,15 +42,15 @@ adb -s <test-device> shell am instrument -w -r -e class "me.rerere.rikkahub.data
 
 验收要保存 `aapt dump badging` 的包名、版本、API、ABI，`apksigner verify --print-certs` 的证书 SHA-256，文件 SHA-256、大小，以及设备 `adb -s <候选测试设备> install` 后的启动、冷启、离线与业务交互证据。上游官方仅分发 ARM64 GitHub APK；x86_64 只能用本地分包验证，不能拿 ARM64 安装包在不具备兼容层的 x86_64 模拟器上做通过结论。
 
-## 可更新的候选渠道
+## 2.0 更新渠道
 
-默认未配置在线渠道。构建参数 `-PkuanUpdateManifest=https://<隔离HTTPS主机>/<路径>/manifest.json` 只给相同包名、签名的候选版；不要指向旧 1.6.10 或上游 RikkaHub。示意（SHA-256 占位值不是可用配置）：
+GitHub Release 构建默认读取 `https://kuanapi.kuankuan.de5.net/downloads/mobile-native/latest.json`。调试构建不访问在线更新渠道。本机离线发行可使用 `-PkuanUpdateManifest=`，隔离安装测试可在相同包名、签名下指定独立清单；不要指向经典版或上游 RikkaHub。示意（SHA-256 占位值不是可用配置）：
 
 ```json
 {
   "packageName": "com.kuanapi.app.nativepreview",
-  "version": "2.0.0-preview.2",
-  "versionCode": 2,
+  "version": "2.0.0",
+  "versionCode": 3,
   "publishedAt": "2026-11-23T00:00:00Z",
   "changelog": "",
   "downloads": [{
@@ -68,4 +68,4 @@ adb -s <test-device> shell am instrument -w -r -e class "me.rerere.rikkahub.data
 
 ## 生产边界
 
-不要运行上游 `.github/workflows/release.yml` 或打发布标签作为本地验收。没有授权部署、改 DNS/Tunnel、发布更新清单、替换正式包、现网账号写入或升级 Sub2API、Grok、Copilot。正式晋升应另建验收并明确历史迁移、包名、原证书和服务端权限，不从预览应用不透明地替换。
+不要运行上游 `.github/workflows/release.yml` 或打发布标签作为本地验收。原生 2.0 单独分发，不写经典版清单、开发运行时、现有 Chat 静态版本、服务配置、DNS/Tunnel 或正式账号数据，也不重启 Sub2API、Grok、Copilot。旧历史需走显式导入，本机私有目录不会自动迁移。

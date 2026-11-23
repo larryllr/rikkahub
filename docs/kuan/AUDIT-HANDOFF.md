@@ -1,6 +1,6 @@
 # 宽 API 原生候选：审计与美学交接
 
-2026-11-23（北京时间）。本文供代码审计和视觉评审使用，范围为宽 API Android `2.0.0-preview.2`。项目基于 RikkaHub 3.3.1，使用单独的 Android 包名和签名。安装包、源码提交与验收证据见交付目录。[构建](BUILD.md) · [改动地图](CHANGE-MAP.md) · [功能差异](FEATURE-MATRIX.md)
+2026-11-23（北京时间）。本文供代码审计和视觉评审使用。项目基于 RikkaHub 3.3.1，使用单独的 Android 包名和签名。业务合流基线为 `2.0.0-preview.2`；2.0.0 的图标、首次入口与公开更新渠道见 [2.0 发布说明](RELEASE-2.0.md)。[构建](BUILD.md) · [改动地图](CHANGE-MAP.md) · [功能差异](FEATURE-MATRIX.md)
 
 ## 产品目标
 

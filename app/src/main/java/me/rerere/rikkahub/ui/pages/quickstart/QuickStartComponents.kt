@@ -42,7 +42,7 @@ internal enum class StepState { DONE, TODO, OPTIONAL }
 @Composable
 internal fun QuickStartHeroCard(
     title: String,
-    description: String,
+    description: String? = null,
     icon: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit = {},
@@ -74,7 +74,9 @@ internal fun QuickStartHeroCard(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(text = title, style = MaterialTheme.typography.titleLargeEmphasized)
-                    Text(text = description, style = MaterialTheme.typography.bodyMedium)
+                    if (description != null) {
+                        Text(text = description, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
             content()

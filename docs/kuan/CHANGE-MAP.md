@@ -21,6 +21,8 @@
 | P01 | `tools/kuan-presentation`、`data/kuan/KuanPresentation.kt`、`ChatRequestFactory.kt` 与 `ChatService.kt::restoreKuanJob` 以受限解析器把富输出投影为 Markdown 与题目数据。 `ChatMessage.kt`、`KuanFollowUps.kt`、`ChatList.kt` 和 `ChatPage.kt` 用原生输入控件呈现真实题干与选项并追加草稿。 | 如需独立撤回，要一起拆流式和结束时的投影及 UI 回调；历史回复中的元数据留作兼容读取。解析器只解释声明式字段，副作用交给原聊天发送，用户仍可直接写文字。 |
 | V01 | `app/src/test/.../data/kuan/KuanContractsTest.kt`：动态目录、群组身份、附件序列化、流结束、更新源校验。 | 源码断言不等于真实账号、安装或支付验收。按交付验收表追加设备与服务器隔离试验，不用现网改数据凑结果。 |
 | V02 | `app/src/androidTest/.../data/kuan/{KuanNativeContractTest,KuanFollowUpsTest}.kt` 和 `tools/kuan-presentation/presentation.test.mjs`。 | 以合成账号核对分组密钥、原件、回执、重复导入和实际 Compose 交互。脚本覆盖前后链接、源码、公式、多题和手填输入。 |
+| B02 | `QuickStartCard.kt`、`QuickStartComponents.kt`：首卡主入口是宽 API 账号；下方「自定义」直达原快速入门。 `kuan_logo.png`、`ic_launcher.xml`、`kuan_launcher_foreground.xml`、`SettingAboutPage.kt` 和 `ConversationExport.kt` 复用经典版原图与原生控件。 | 回退入口和图标不需要数据迁移。保留 RikkaHub 原快速入门页、设置页和版权链接。 |
+| U02 | `app/build.gradle.kts`、`distribution/android.html`、`tools/publish_kuan_android.py` 分发 2.0 和经典版。 | 不覆盖旧包、旧清单或 Chat 指针。撤回发行只移走此版新页面及原生渠道目录；不降低已安装应用的 versionCode。 |
 
 ## 分阶段撤回方法
 

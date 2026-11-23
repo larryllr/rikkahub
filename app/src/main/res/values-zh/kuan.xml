@@ -2,9 +2,11 @@
 <resources>
     <string name="kuan_follow_up_select">选择一项</string>
     <string name="kuan_follow_up_unresolved">还没有可用的答案。请检查选择，或在输入框直接回复。</string>
-  <string name="kuan_app_name">宽 API 预览</string>
+  <string name="kuan_app_name">宽 API 2.0</string>
   <string name="kuan_account">宽 API</string>
-  <string name="kuan_sign_in_action">登录宽 API</string>
+  <string name="kuan_sign_in_action">宽 API 登录</string>
+  <string name="kuan_custom_setup">自定义</string>
+  <string name="kuan_source_code">应用源码</string>
   <string name="kuan_sign_in">登录</string>
   <string name="kuan_sign_out">退出登录</string>
   <string name="kuan_register">注册</string>

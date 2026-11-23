@@ -2,8 +2,10 @@
 <resources>
     <string name="kuan_follow_up_select">Select an option</string>
     <string name="kuan_follow_up_unresolved">An answer is required. Check your selections or reply in the composer.</string>
-  <string name="kuan_app_name">Kuan API Preview</string>
+  <string name="kuan_app_name">Kuan API 2.0</string>
   <string name="kuan_account">Kuan API</string>
+  <string name="kuan_custom_setup">Custom</string>
+  <string name="kuan_source_code">App source code</string>
   <string name="kuan_sign_in_action">Sign in to Kuan API</string>
   <string name="kuan_sign_in">Sign in</string>
   <string name="kuan_sign_out">Sign out</string>

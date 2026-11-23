@@ -24,9 +24,10 @@ android {
         applicationId = "com.kuanapi.app.nativepreview"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "2.0.0-preview.2"
-        val updateManifest = providers.gradleProperty("kuanUpdateManifest").orElse("").get()
+        versionCode = 3
+        versionName = "2.0.0"
+        val updateManifest = providers.gradleProperty("kuanUpdateManifest")
+            .orElse("https://kuanapi.kuankuan.de5.net/downloads/mobile-native/latest.json").get()
         require(updateManifest.isEmpty() || updateManifest.matches(Regex("https://[a-zA-Z0-9./_-]+"))) {
             "kuanUpdateManifest must be an HTTPS manifest URL without credentials or query parameters"
         }
@@ -94,6 +95,7 @@ android {
         }
         debug {
             applicationIdSuffix = ".debug"
+            buildConfigField("String", "KUAN_UPDATE_MANIFEST", "\"\"")
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
