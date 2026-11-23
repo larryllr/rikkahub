@@ -147,6 +147,27 @@ class ConversationConfigTest {
     }
 
     @Test
+    fun `missing managed model never falls back to an unrelated group or user provider`() {
+        val scope = "${Uuid.random()}/1/WORK"
+        val managed = settings().copy(
+            providers = listOf(
+                ProviderSetting.OpenAI(models = listOf(modelA), managedGroup = scope),
+                ProviderSetting.OpenAI(models = listOf(modelB)),
+            ),
+        )
+        val bound = conversation().bindConfig(managed)
+        assertEquals(scope, bound.config?.managedGroup)
+        val without = settings(assistant.copy(chatModelId = modelB.id)).copy(
+            providers = listOf(ProviderSetting.OpenAI(models = listOf(modelB))),
+        )
+        assertNull(without.getChatModelOf(bound))
+        assertSame(bound, bound.bindConfig(without))
+        val switched = bound.withAssistantUpdate(assistant.copy(chatModelId = modelB.id), without)
+        assertNull(switched.config?.managedGroup)
+        assertEquals(modelB, without.getChatModelOf(switched))
+    }
+
+    @Test
     fun `bound conversation drops references to removed items`() {
         val bound = conversation().bindConfig(settings())
         val emptied = settings().copy(mcpServers = emptyList(), modeInjections = emptyList(), lorebooks = emptyList())

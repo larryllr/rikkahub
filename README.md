@@ -1,3 +1,9 @@
+> **Kuan API Native Preview** is a modified, separately packaged build of RikkaHub 3.3.1
+> (changes dated 2026-11-23). It is not an official RikkaHub release or an in-place
+> upgrade for Kuan API 1.6.10. See the [build instructions](docs/kuan/BUILD.md),
+> [change map](docs/kuan/CHANGE-MAP.md), and [audit handoff](docs/kuan/AUDIT-HANDOFF.md).
+> The original notices and AGPL-3.0 license remain in this source tree.
+
 <div align="center">
   <img src="docs/icon.png" alt="App Icon" width="100" />
   <h1>RikkaHub</h1>

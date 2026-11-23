@@ -16,6 +16,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.BackgroundTarget
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
@@ -43,6 +44,8 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.kuan.KuanLane
+import me.rerere.rikkahub.data.kuan.kuanRoute
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MemoryFile
@@ -116,7 +119,7 @@ class ChatRequestFactory(
             conversationSystemPrompt = conversation.customSystemPrompt,
             workspaceCwd = conversation.workspaceCwd,
             memories = if (assistant.enableMemory) memoryRepository.getFiles(assistant.memoryId) else emptyList(),
-            tools = chatToolFactory.createTools(
+            tools = if (provider.kuanRoute()?.lane == KuanLane.WEB) emptyList() else chatToolFactory.createTools(
                 settings = settings,
                 assistant = assistant,
                 model = model,
@@ -137,6 +140,7 @@ class ChatRequestFactory(
         processingStatus: MutableStateFlow<String?>,
         takePendingParts: suspend () -> List<UIMessagePart> = { emptyList() },
         pauseAfterTools: (UIMessage) -> Boolean = { false },
+        backgroundNode: Uuid? = null,
     ): Pair<AgentRequest, AgentHooks> {
         val request = AgentRequest(
             provider = usageRecorder.wrap(
@@ -147,12 +151,16 @@ class ChatRequestFactory(
             messages = messages,
             tools = turn.tools,
             stream = turn.assistant.streamOutput,
-            retry = turn.settings.retryPolicy(),
+            retry = if (turn.providerSetting.kuanRoute() == null) turn.settings.retryPolicy() else RetryPolicy.NONE,
         )
         val hooks = object : AgentHooks {
             override suspend fun prepareStep(messages: List<UIMessage>): StepRequest {
                 Log.i(TAG, "prepareStep: ${turn.model.id}")
-                return buildStep(turn, messages, processingStatus)
+                val step = buildStep(turn, messages, processingStatus)
+                val anchor = messages.lastOrNull()?.takeIf { it.role == MessageRole.USER }?.id
+                return if (turn.providerSetting.kuanRoute() != null && turn.tools.isEmpty() && backgroundNode != null && anchor != null) {
+                    step.copy(params = step.params.copy(backgroundTarget = BackgroundTarget(backgroundNode, anchor)))
+                } else step
             }
 
             override suspend fun previewStep(message: UIMessage, newPartsFrom: Int) =
@@ -205,7 +213,7 @@ class ChatRequestFactory(
         val (requestMessages, params) = buildStep(turn, messages)
         // 压缩指令不经过输入转换器，模板转换器会把其中的花括号当成模板语法
         val result = withRetry(
-            policy = turn.settings.retryPolicy(),
+            policy = if (turn.providerSetting.kuanRoute() == null) turn.settings.retryPolicy() else RetryPolicy.NONE,
             onRetry = { Log.w(TAG, "Compression request failed, retrying in ${it.delay}", it.cause) },
         ) {
             usageRecorder.wrap(
@@ -256,9 +264,21 @@ class ChatRequestFactory(
             if (system.isNotBlank()) {
                 add(UIMessage.system(prompt = system).copy(isSynthetic = true))
             }
-            addAll(messages.limitContext(assistant.contextMessageLimit).withContinuationHint())
+            val recent = messages.limitContext(assistant.contextMessageLimit).withContinuationHint()
+            if (turn.providerSetting.kuanRoute() != null) {
+                val visibleIds = recent.mapTo(HashSet()) { it.id }
+                val recentFiles = recent.flatMap { it.parts }.filter { it is UIMessagePart.Document || it is UIMessagePart.Image }.toHashSet()
+                val earlierFiles = messages.filter { it.id !in visibleIds }.flatMap { it.parts }
+                    .filter { (it is UIMessagePart.Document || it is UIMessagePart.Image) && it !in recentFiles }
+                    .distinct()
+                if (earlierFiles.isNotEmpty()) {
+                    add(UIMessage(role = MessageRole.USER, parts = earlierFiles, isSynthetic = true))
+                }
+            }
+            addAll(recent)
         }.transforms(
-            transformers = inputTransformers,
+            transformers = if (turn.providerSetting.kuanRoute() == null) inputTransformers
+                else inputTransformers.filterNot { it === DocumentAsPromptTransformer || it === OcrTransformer },
             context = context,
             model = turn.model,
             assistant = assistant,

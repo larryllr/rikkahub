@@ -1,5 +1,15 @@
 package me.rerere.rikkahub.service
 
+import me.rerere.rikkahub.data.kuan.KuanJobs
+import me.rerere.rikkahub.data.kuan.KuanJobRecord
+import me.rerere.rikkahub.data.kuan.KuanProtocolError
+import me.rerere.rikkahub.data.kuan.kuanRoute
+import me.rerere.ai.ui.StreamChunk
+import me.rerere.ai.ui.StreamChunkHandler
+import kotlin.time.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+
 import android.app.Application
 import android.util.Log
 import androidx.annotation.StringRes
@@ -106,7 +116,7 @@ enum class ChatErrorSolution {
     CheckFastModelSettings,
 }
 
-class ChatService(
+class ChatService internal constructor(
     private val context: Application,
     private val appScope: AppScope,
     private val appEventBus: AppEventBus,
@@ -120,6 +130,7 @@ class ChatService(
     private val filesManager: FilesManager,
     private val folderRepository: FolderRepository,
     private val backgroundShellManager: BackgroundShellManager,
+    private val kuanJobs: KuanJobs,
 ) {
     /** 一次 agent 运行发给模型的消息，和回复要写进的节点 */
     private class ReplyTarget(val history: List<UIMessage>, val nodeId: Uuid) {
@@ -305,7 +316,60 @@ class ChatService(
     suspend fun initializeConversation(conversationId: Uuid) {
         withLoadedSession(conversationId) { session ->
             settingsStore.selectAssistant(session.state.value.assistantId)
+            restoreKuanJob(session)
         }
+    }
+
+    private suspend fun restoreKuanJob(session: ConversationSession) {
+        if (!session.canStartNextTurn) return
+        val record = kuanJobs.pending(session.id) ?: return
+        if (!session.state.value.canAttach(record)) return
+        synchronized(session) {
+            if (!session.canStartNextTurn) return@synchronized
+            session.setJob(launchGenerationJob(conversationId = session.id) {
+                try {
+                    val model = Model(id = record.model, modelId = record.wireModel, displayName = record.wireModel)
+                    val base = UIMessage(id = record.message, role = MessageRole.ASSISTANT,
+                        modelId = model.id, parts = emptyList())
+                    var message = base
+                    var handler = StreamChunkHandler(model)
+                    session.replyMessageId.value = record.message
+                    kuanJobs.events(record).collect { event ->
+                        if (event == StreamChunk.ResetAttempt) {
+                            handler = StreamChunkHandler(model)
+                            message = base
+                        } else {
+                            message = handler.handle(listOf(message), event).single()
+                        }
+                        session.update { latest ->
+                            if (!latest.canAttach(record)) throw KuanProtocolError("Conversation branch changed during recovery")
+                            latest.upsertMessage(record.node, message)
+                        }
+                    }
+                    val finished = filesManager.convertBase64ImagePartToLocalFile(message).copy(
+                        finishedAt = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()),
+                    )
+                    session.update { latest ->
+                        if (!latest.canAttach(record)) throw KuanProtocolError("Conversation branch changed during recovery")
+                        latest.upsertMessage(record.node, finished)
+                    }
+                    session.finishGeneration()
+                    kuanJobs.acknowledge(record.conversation, record.message)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    reportFailure(session, error, R.string.error_title_generation)
+                }
+            })
+        }
+    }
+
+    private fun Conversation.canAttach(record: KuanJobRecord): Boolean {
+        val tail = messageNodes.lastOrNull() ?: return false
+        return if (tail.id == record.node) {
+            tail.currentMessage?.id == record.message &&
+                messageNodes.getOrNull(messageNodes.lastIndex - 1)?.currentMessage?.id == record.anchor
+        } else tail.currentMessage?.id == record.anchor && messageNodes.none { it.id == record.node }
     }
 
     private suspend fun ensureInitialized(session: ConversationSession) {
@@ -498,6 +562,9 @@ class ChatService(
             try {
                 ensureInitialized(session)
                 finishInterruptedPendingTools(session)
+                if (kuanJobs.pending(conversationId) != null) {
+                    throw KuanProtocolError("Recover or stop the pending server task before sending a new message")
+                }
 
                 val assistant = settingsStore.awaitLoaded().getStoredAssistantOf(session.state.value)
                 val processedContent = queued.parts.replaceUserRegexes(assistant)
@@ -716,6 +783,10 @@ class ChatService(
             val canCompress = regenerateNodeId == null || conversation.messageNodes.lastOrNull()?.id == regenerateNodeId
 
             val turn = requestFactory.createContext(settings, conversation)
+            val managed = turn.providerSetting.kuanRoute() != null
+            if (managed && kuanJobs.pending(conversationId) != null) {
+                throw KuanProtocolError("Recover or stop the pending server task before starting another reply")
+            }
             senderName = if (turn.assistant.useAssistantAvatar) {
                 turn.assistant.name.ifEmpty { context.getString(R.string.assistant_page_default_assistant) }
             } else {
@@ -736,6 +807,7 @@ class ChatService(
                         messages = target.history,
                         processingStatus = session.processingStatus,
                         takePendingParts = session.inbox::takeNotices,
+                        backgroundNode = replyNodeId.takeIf { regenerateNodeId == null && !afterCompression },
                         pauseAfterTools = pause@{ message ->
                             if (!canCompress || compressionUseless) return@pause false
                             // 同一条回复只试一次，压缩失败后接着它写时不再重试
@@ -786,6 +858,16 @@ class ChatService(
                     session.processingStatus.value = null
                     // 可能被取消了，或者意外结束，兜底保存
                     val finished = session.finishGeneration()
+                    if (managed && finishReason == AgentFinishReason.Completed) {
+                        val messageId = session.replyMessageId.value
+                        if (messageId != null && finished.currentMessages.any { it.id == messageId && it.finishedAt != null }) {
+                            try {
+                                kuanJobs.acknowledge(conversationId, messageId)
+                            } catch (error: Exception) {
+                                addError(error, conversationId)
+                            }
+                        }
+                    }
                     // 生成结束：取消 Live Update 通知，后台时发送完成通知
                     appEventBus.emit(
                         AppEvent.ChatGenerationEnded(
@@ -800,7 +882,7 @@ class ChatService(
 
             val reason = checkNotNull(finishReason)
             // 等待审批时这一轮还没结束，标题、建议和记忆整理等审批之后再做
-            if (reason !is AgentFinishReason.AwaitingApproval) {
+            if (!managed && reason !is AgentFinishReason.AwaitingApproval) {
                 sessionManager.launchWithSession(conversationId) { generateTitle(conversationId) }
                 sessionManager.launchWithSession(conversationId) { generateSuggestion(conversationId) }
                 if (turn.assistant.enableMemory) memoryConsolidationScheduler.onTurnFinished(session.state.value)
@@ -1506,13 +1588,23 @@ class ChatService(
 
     // 停止当前会话生成任务（不清理会话缓存）
     suspend fun stopGeneration(conversationId: Uuid) {
-        val session = sessionManager.get(conversationId) ?: return
+        val session = sessionManager.get(conversationId)
+        if (session == null) {
+            kuanJobs.cancel(conversationId)
+            return
+        }
         val jobs = synchronized(session) {
             session.inbox.pause()
             session.cancelJobs()
         }
-        if (jobs.isEmpty()) return
         jobs.forEach { it.join() }
+        try {
+            kuanJobs.cancel(conversationId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            addError(error, conversationId)
+        }
         if (session.isInitialized) finishInterruptedPendingTools(session)
     }
 }

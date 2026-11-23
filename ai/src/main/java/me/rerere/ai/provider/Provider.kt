@@ -74,6 +74,14 @@ data class TextGenerationParams(
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
     val sessionId: String? = Uuid.random().toString(),
+    val backgroundTarget: BackgroundTarget? = null,
+)
+
+@Serializable
+data class BackgroundTarget(
+    val nodeId: Uuid,
+    val anchorId: Uuid,
+    val messageId: Uuid? = null,
 )
 
 @Serializable

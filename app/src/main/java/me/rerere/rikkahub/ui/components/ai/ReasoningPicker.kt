@@ -49,8 +49,6 @@ import me.rerere.ui.icons.ReasoningMedium
 import kotlin.math.roundToInt
 
 private val levels = ReasoningLevel.entries
-private val levelCount = levels.size
-private val levelShapes = levels.map { it.shape() }
 
 @Composable
 fun ReasoningButton(
@@ -58,20 +56,23 @@ fun ReasoningButton(
     onlyIcon: Boolean = false,
     reasoningLevel: ReasoningLevel,
     onUpdateReasoningLevel: (ReasoningLevel) -> Unit,
+    availableLevels: List<ReasoningLevel> = levels,
 ) {
     var showPicker by remember { mutableStateOf(false) }
 
-    if (showPicker) {
+    val selected = reasoningLevel.takeIf { it in availableLevels } ?: availableLevels.firstOrNull() ?: ReasoningLevel.AUTO
+    if (showPicker && availableLevels.size > 1) {
         ReasoningPicker(
-            reasoningLevel = reasoningLevel,
+            reasoningLevel = selected,
+            availableLevels = availableLevels,
             onDismissRequest = { showPicker = false },
             onUpdateReasoningLevel = onUpdateReasoningLevel
         )
     }
 
     ToggleSurface(
-        checked = reasoningLevel.isEnabled,
-        onClick = { showPicker = true },
+        checked = selected.isEnabled,
+        onClick = { if (availableLevels.size > 1) showPicker = true },
         modifier = modifier,
     ) {
         Row(
@@ -83,7 +84,7 @@ fun ReasoningButton(
                 modifier = Modifier.size(24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(reasoningLevel.icon(), null)
+                Icon(selected.icon(), null)
             }
             if (!onlyIcon) Text(stringResource(R.string.setting_provider_page_reasoning))
         }
@@ -95,13 +96,17 @@ fun ReasoningPicker(
     reasoningLevel: ReasoningLevel,
     onDismissRequest: () -> Unit = {},
     onUpdateReasoningLevel: (ReasoningLevel) -> Unit,
+    availableLevels: List<ReasoningLevel> = levels,
 ) {
+    val levels = availableLevels.takeIf { it.size > 1 } ?: return
+    val levelCount = levels.size
+    val levelShapes = remember(levels) { levels.map { it.shape() } }
     val currentIndex = levels.indexOf(reasoningLevel).coerceAtLeast(0)
-    val sliderState = remember {
+    val sliderState = remember(levels) {
         SliderState(
             value = currentIndex.toFloat(),
             trackRange = 0f..(levelCount - 1).toFloat(),
-            steps = levelCount - 2,
+            steps = (levelCount - 2).coerceAtLeast(0),
         )
     }
     val interactionSource = remember { MutableInteractionSource() }

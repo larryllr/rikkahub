@@ -86,6 +86,9 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.kuan.KuanCatalog
+import me.rerere.rikkahub.data.kuan.KuanSession
+import me.rerere.rikkahub.data.kuan.kuanRoute
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
@@ -319,6 +322,7 @@ internal fun ModelField(
 @Composable
 fun ModelListSheet(
     state: ModelListState,
+    kuanGroups: Boolean = false,
     onSelect: (Model) -> Unit,
 ) {
     if (!state.visible) return
@@ -328,6 +332,15 @@ fun ModelListSheet(
         initialValue = SheetValue.Hidden,
         enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
     )
+    val catalog = if (kuanGroups) koinInject<KuanCatalog>() else null
+    val session = if (kuanGroups) koinInject<KuanSession>() else null
+    val profile = session?.state?.collectAsStateWithLifecycle()?.value?.profile
+    val groupState = catalog?.state?.collectAsStateWithLifecycle()?.value
+    val nav = LocalNavController.current
+
+    LaunchedEffect(profile?.scope) {
+        if (profile != null) catalog?.refresh()
+    }
 
     fun dismiss() {
         coroutineScope.launch {
@@ -349,9 +362,24 @@ fun ModelListSheet(
                 .imePadding(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            if (kuanGroups) {
+                KuanModelControl(
+                    signedIn = profile != null,
+                    state = groupState,
+                    onAccount = {
+                        state.close()
+                        nav.navigate(Screen.KuanAccount)
+                    },
+                    onGroup = { group -> coroutineScope.launch { catalog?.refresh(group, force = true) } },
+                    onRefresh = { coroutineScope.launch { catalog?.refresh(force = true) } },
+                )
+            }
             ModelList(
                 currentModel = state.modelId,
-                providers = state.filteredProviders,
+                providers = state.filteredProviders.filter { provider ->
+                    val route = provider.kuanRoute()
+                    route == null || !kuanGroups || route.scope == profile?.scope && route.groupId == groupState?.groupId
+                },
                 modelType = state.type,
                 onSelect = {
                     onSelect(it)
@@ -385,6 +413,7 @@ private fun ColumnScope.ModelList(
         val model = settings.value.providers.findModelById(modelId) ?: return@mapNotNull null
         if (model.type != modelType) return@mapNotNull null
         val provider = model.findProvider(providers = settings.value.providers, checkOverwrite = false) ?: return@mapNotNull null
+        if (providers.none { it.id == provider.id }) return@mapNotNull null
         model to provider
     }
 

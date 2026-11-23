@@ -26,6 +26,13 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.kuan.KuanApi
+import me.rerere.rikkahub.data.kuan.KuanAssets
+import me.rerere.rikkahub.data.kuan.KuanCatalog
+import me.rerere.rikkahub.data.kuan.KuanJobs
+import me.rerere.rikkahub.data.kuan.KuanOperations
+import me.rerere.rikkahub.data.kuan.KuanProvider
+import me.rerere.rikkahub.data.kuan.KuanSession
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
@@ -55,6 +62,14 @@ val dataSourceModule = module {
     single {
         SettingsStore(context = get(), scope = get())
     }
+
+    single { KuanApi() }
+    single { KuanSession(get(), get(), get()) }
+    single { KuanCatalog(get(), get(), get(), get()) }
+    single { KuanAssets(get(), get(), get(), get()) }
+    single { KuanOperations(get()) }
+    single { KuanJobs(get(), get(), get()) }
+    single { KuanProvider(get(), get(), get(), get(), get()) }
 
     single {
         val context: Context = get()
@@ -258,7 +273,9 @@ val dataSourceModule = module {
     }
 
     single {
-        ProviderManager(client = get(), context = get(), accountCredentials = get<ProviderAccountManager>())
+        ProviderManager(client = get(), context = get(), accountCredentials = get<ProviderAccountManager>()).apply {
+            registerProvider("kuan", get<KuanProvider>())
+        }
     }
 
     single { BackupManager(context = get(), database = get(), settingsStore = get(), json = get()) }

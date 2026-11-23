@@ -80,6 +80,7 @@ class StreamChunkHandler(private val model: Model? = null) {
 
     private fun append(message: UIMessage, chunk: StreamChunk): UIMessage = with(message) {
         when (chunk) {
+            StreamChunk.ResetAttempt -> message
             is StreamChunk.TextStart -> {
                 if (chunk.id in textPartIndexes) {
                     this

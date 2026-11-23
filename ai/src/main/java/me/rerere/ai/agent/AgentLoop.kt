@@ -9,6 +9,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.sum
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.StreamChunkHandler
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessage
@@ -89,12 +90,15 @@ internal class AgentLoop(
         appendPendingParts()
         val current = message
         val step = hooks.prepareStep(if (current == null) history else history + current)
-        val params = step.params.copy(tools = request.tools)
+        val requestedParams = step.params.copy(tools = request.tools)
         // 只带着追加内容创建的消息还没有模型 id
-        val base = current?.let { it.copy(modelId = it.modelId ?: params.model.id) } ?: UIMessage(
+        val base = current?.let { it.copy(modelId = it.modelId ?: requestedParams.model.id) } ?: UIMessage(
             role = MessageRole.ASSISTANT,
             parts = emptyList(),
-            modelId = params.model.id,
+            modelId = requestedParams.model.id,
+        )
+        val params = requestedParams.copy(
+            backgroundTarget = requestedParams.backgroundTarget?.takeIf { current == null }?.copy(messageId = base.id),
         )
         val generated = if (request.stream) {
             stream(step.messages, params, base)
@@ -126,11 +130,18 @@ internal class AgentLoop(
             withRetry(request.retry, onRetry = { events.emit(AgentEvent.Retrying(it)) }) {
                 // 每次重试都从本步开始时的消息重新合并，不会把重试的响应接在已经展示的半截回复后面；
                 // 各次尝试共用同一个消息 id，调用方直接覆盖即可。
-                val handler = StreamChunkHandler(params.model)
+                var handler = StreamChunkHandler(params.model)
                 var attempt = stepStart
                 var firstChunk: TimeMark? = null
                 request.provider.streamText(request.providerSetting, messages, params).collect { chunk ->
                     try {
+                        if (chunk == StreamChunk.ResetAttempt) {
+                            handler = StreamChunkHandler(params.model)
+                            attempt = stepStart
+                            firstChunk = null
+                            preview(attempt.withStepStats(base, Duration.ZERO), newPartsFrom = base.parts.size)
+                            return@collect
+                        }
                         val mark = firstChunk ?: TimeSource.Monotonic.markNow().also { firstChunk = it }
                         attempt = handler.handle(listOf(attempt), chunk).single()
                         preview(attempt.withStepStats(base, mark.elapsedNow()), newPartsFrom = base.parts.size)

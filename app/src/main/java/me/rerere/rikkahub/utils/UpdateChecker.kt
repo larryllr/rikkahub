@@ -1,106 +1,190 @@
 package me.rerere.rikkahub.utils
 
-import android.app.DownloadManager
 import android.content.Context
-import android.os.Environment
-import android.widget.Toast
-import androidx.core.net.toUri
+import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.IOException
+import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.rerere.common.http.await
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.BuildConfig
+import me.rerere.rikkahub.data.kuan.KuanApi
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val API_URL = "https://updates.rikka-ai.com/"
-
 class UpdateChecker(
-    private val client: OkHttpClient,
-    appScope: AppScope,
+    private val appScope: AppScope,
 ) {
+    private val client: OkHttpClient = KuanApi.privateClient()
     private val json = Json { ignoreUnknownKeys = true }
+    private val manifestUrl = BuildConfig.KUAN_UPDATE_MANIFEST.toHttpUrlOrNull()
+    val configured = !BuildConfig.IS_PLAY_STORE && manifestUrl != null
+    private val state = MutableStateFlow<UiState<UpdateInfo>>(UiState.Loading)
+    val updateState = state.asStateFlow()
+    private val downloadState = MutableStateFlow<DownloadState>(DownloadState.Idle)
+    val updates = downloadState.asStateFlow()
+    private var checking: Job? = null
+    private var installing: Job? = null
 
-    val updateState: StateFlow<UiState<UpdateInfo>> = checkUpdate().stateIn(
-        scope = appScope,
-        started = SharingStarted.Lazily,
-        initialValue = UiState.Loading,
-    )
+    init { refresh() }
 
-    private fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
-        emit(UiState.Loading)
-        emit(
-            UiState.Success(
-                data = try {
-                    val response = client.newCall(
-                        Request.Builder()
-                            .url(API_URL)
-                            .get()
-                            .addHeader(
-                                "User-Agent",
-                                "RikkaHub ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
-                            )
-                            .build()
-                    ).await()
-                    if (response.isSuccessful) {
-                        json.decodeFromString<UpdateInfo>(response.body.string())
-                    } else {
-                        throw Exception("Failed to fetch update info")
-                    }
-                } catch (e: Exception) {
-                    throw Exception("Failed to fetch update info", e)
+    @Synchronized
+    fun refresh() {
+        if (!configured || checking?.isActive == true) return
+        checking = appScope.launch(Dispatchers.IO) {
+            state.value = UiState.Loading
+            try {
+                val url = checkNotNull(manifestUrl)
+                val release = client.newCall(Request.Builder().url(url).build()).await().use {
+                    if (!it.isSuccessful || it.body.source().request(65_537)) throw IOException("Update manifest unavailable")
+                    json.decodeFromString<UpdateInfo>(it.body.source().readUtf8())
                 }
-            )
-        )
-    }.catch {
-        emit(UiState.Error(it))
-    }.flowOn(Dispatchers.IO)
-
-    fun downloadUpdate(context: Context, download: UpdateDownload) {
-        runCatching {
-            val request = DownloadManager.Request(download.url.toUri()).apply {
-                // 设置下载时通知栏的标题和描述
-                setTitle(download.name)
-                setDescription("正在下载更新包...")
-                // 下载完成后通知栏可见
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                // 设置文件保存路径
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, download.name)
-                // 允许下载的文件类型
-                setMimeType("application/vnd.android.package-archive")
+                if (release.packageName != BuildConfig.APPLICATION_ID || release.versionCode <= 0 ||
+                    release.version.isBlank() || release.downloads.any { !it.validFor(url) }
+                ) throw IOException("Update manifest does not match this installation")
+                state.value = UiState.Success(release.copy(
+                    downloads = release.downloads.filter { it.abi == "universal" || it.abi in Build.SUPPORTED_ABIS },
+                ))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                state.value = UiState.Error(IOException("Could not verify the update manifest"))
             }
-            // 获取系统的DownloadManager
-            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            dm.enqueue(request)
-            // 你可以保存返回的downloadId到本地，以便后续查询下载进度或状态
-        }.onFailure {
-            Toast.makeText(context, "Failed to update", Toast.LENGTH_SHORT).show()
-            context.openUrl(download.url) // 跳转到下载页面
         }
     }
+
+    @Synchronized
+    fun downloadUpdate(context: Context, download: UpdateDownload) {
+        val release = (state.value as? UiState.Success)?.data ?: return
+        val url = manifestUrl ?: return
+        if (!configured || installing?.isActive == true || download !in release.downloads ||
+            !download.validFor(url) || release.versionCode <= BuildConfig.VERSION_CODE.toLong()
+        ) return
+        val ctx = context.applicationContext
+        if (!ctx.packageManager.canRequestPackageInstalls()) {
+            runCatching {
+                ctx.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${ctx.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            downloadState.value = DownloadState.PermissionNeeded
+            return
+        }
+        installing = appScope.launch(Dispatchers.IO) {
+            downloadState.value = DownloadState.Downloading(0f)
+            val directory = File(ctx.cacheDir, "verified-updates")
+            directory.mkdirs()
+            var staged: File? = null
+            try {
+                val file = File.createTempFile("kuan-", ".apk", directory).also { staged = it }
+                val digest = MessageDigest.getInstance("SHA-256")
+                val expected = download.bytes
+                var read = 0L
+                client.newCall(Request.Builder().url(download.url).build()).await().use { response ->
+                    if (!response.isSuccessful) throw IOException("APK download failed")
+                    val declared = response.body.contentLength()
+                    if (declared >= 0 && declared != expected) throw IOException("APK size does not match manifest")
+                    response.body.byteStream().use { input ->
+                        file.outputStream().use { output ->
+                            val buffer = ByteArray(65536)
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                read += count
+                                if (read > expected) throw IOException("APK exceeds declared size")
+                                digest.update(buffer, 0, count)
+                                output.write(buffer, 0, count)
+                                downloadState.value = DownloadState.Downloading(read.toFloat() / expected)
+                            }
+                        }
+                    }
+                }
+                val hash = digest.digest().joinToString("") { "%02x".format(it) }
+                if (read != expected || hash != download.sha256) throw IOException("APK checksum mismatch")
+                verifyArchive(ctx, file, release.versionCode)
+                val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+                withContext(Dispatchers.Main) {
+                    ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    downloadState.value = DownloadState.Ready
+                }
+            } catch (error: CancellationException) {
+                staged?.delete()
+                throw error
+            } catch (_: Exception) {
+                staged?.delete()
+                downloadState.value = DownloadState.Failed
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun verifyArchive(context: Context, apk: File, expectedCode: Long) {
+        val pm = context.packageManager
+        val flag = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        val installed = pm.getPackageInfo(context.packageName, flag)
+        val candidate = pm.getPackageArchiveInfo(apk.absolutePath, flag) ?: throw IOException("Invalid APK")
+        fun version(info: PackageInfo) = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+        fun signatures(info: PackageInfo) = (if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners
+            else info.signatures)?.toSet().orEmpty()
+        if (candidate.packageName != installed.packageName || version(candidate) != expectedCode ||
+            version(candidate) <= version(installed) || signatures(installed).isEmpty() ||
+            signatures(installed) != signatures(candidate)
+        ) throw IOException("APK package or signing certificate does not match")
+    }
+}
+
+sealed interface DownloadState {
+    data object Idle : DownloadState
+    data object PermissionNeeded : DownloadState
+    data class Downloading(val progress: Float) : DownloadState
+    data object Ready : DownloadState
+    data object Failed : DownloadState
 }
 
 @Serializable
 data class UpdateDownload(
     val name: String,
     val url: String,
-    val size: String
-)
+    val size: String = "",
+    val bytes: Long = 0,
+    val sha256: String = "",
+    val abi: String = "universal",
+) {
+    internal fun validFor(manifest: HttpUrl): Boolean {
+        val apk = url.toHttpUrlOrNull() ?: return false
+        return apk.isHttps && apk.host == manifest.host && apk.port == manifest.port &&
+            apk.username.isEmpty() && apk.password.isEmpty() && apk.fragment == null &&
+            apk.encodedPath.endsWith(".apk") && name.endsWith(".apk") &&
+            sha256.matches(Regex("[a-f0-9]{64}")) && bytes in 1L..180_000_000L &&
+            abi in setOf("universal", "arm64-v8a", "x86_64")
+    }
+}
 
 @Serializable
 data class UpdateInfo(
     val version: String,
-    val publishedAt: String,
-    val changelog: String,
-    val downloads: List<UpdateDownload>
+    val publishedAt: String = "",
+    val changelog: String = "",
+    val downloads: List<UpdateDownload>,
+    val packageName: String = "",
+    val versionCode: Long = 0,
 )
 
 /**

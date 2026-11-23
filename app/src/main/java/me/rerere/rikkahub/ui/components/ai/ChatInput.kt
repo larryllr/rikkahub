@@ -308,6 +308,11 @@ fun ChatInput(
                                 if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
                                     ReasoningButton(
                                         reasoningLevel = assistant.reasoningLevel,
+                                        availableLevels = chatModel.serverReasoningLevels?.let { efforts ->
+                                            me.rerere.ai.core.ReasoningLevel.entries.filter {
+                                                it == me.rerere.ai.core.ReasoningLevel.AUTO || it.effort in efforts
+                                            }
+                                        } ?: me.rerere.ai.core.ReasoningLevel.entries,
                                         onUpdateReasoningLevel = {
                                             onUpdateAssistant(assistant.copy(reasoningLevel = it))
                                         },
@@ -383,6 +388,7 @@ fun ChatInput(
 
     ModelListSheet(
         state = modelListState,
+        kuanGroups = true,
         onSelect = onUpdateChatModel,
     )
 }

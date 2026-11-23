@@ -9,8 +9,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.crashlytics)
     alias(libs.plugins.baselineprofile)
 }
 
@@ -23,11 +21,16 @@ android {
     }
 
     defaultConfig {
-        applicationId = "me.rerere.rikkahub"
+        applicationId = "com.kuanapi.app.nativepreview"
         minSdk = 26
         targetSdk = 37
-        versionCode = 198
-        versionName = "3.3.1"
+        versionCode = 1
+        versionName = "2.0.0-preview.1"
+        val updateManifest = providers.gradleProperty("kuanUpdateManifest").orElse("").get()
+        require(updateManifest.isEmpty() || updateManifest.matches(Regex("https://[a-zA-Z0-9./_-]+"))) {
+            "kuanUpdateManifest must be an HTTPS manifest URL without credentials or query parameters"
+        }
+        buildConfigField("String", "KUAN_UPDATE_MANIFEST", "\"$updateManifest\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -69,6 +72,13 @@ android {
                     keyAlias = keyAliasValue
                     keyPassword = keyPasswordValue
                 }
+            }
+
+            providers.environmentVariable("KUAN_PREVIEW_KEYSTORE").orNull?.let { path ->
+                storeFile = file(path)
+                storePassword = providers.environmentVariable("KUAN_PREVIEW_STORE_PASSWORD").get()
+                keyAlias = "kuan-native-preview"
+                keyPassword = storePassword
             }
         }
     }
@@ -219,11 +229,6 @@ dependencies {
     implementation(libs.androidx.navigation3.ui)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.androidx.material3.adaptive.navigation3)
-
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.analytics)
-    implementation(libs.firebase.crashlytics)
 
     // DataStore
     implementation(libs.androidx.datastore.preferences)

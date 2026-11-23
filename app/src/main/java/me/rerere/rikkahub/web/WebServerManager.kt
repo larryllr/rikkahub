@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.kuan.KuanSession
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.service.ChatService
@@ -35,14 +36,15 @@ data class WebServerState(
     val error: String? = null
 )
 
-class WebServerManager(
+class WebServerManager internal constructor(
     private val context: Context,
     private val appScope: AppScope,
     private val chatService: ChatService,
     private val conversationRepo: ConversationRepository,
     private val folderRepo: FolderRepository,
     private val settingsStore: SettingsStore,
-    private val filesManager: FilesManager
+    private val filesManager: FilesManager,
+    private val kuanSession: KuanSession,
 ) {
     private var server: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
     private val nsdRegistrar = NsdServiceRegistrar(context)
@@ -76,8 +78,16 @@ class WebServerManager(
                     _state.value = baseState.copy(error = "Port $port is already in use")
                     return@launch
                 }
+                val settings = settingsStore.awaitLoaded()
+                val privateChannel = localhostOnly && settings.webServerJwtEnabled && settings.webServerAccessPassword.isNotBlank()
+                if (kuanSession.state.value.ownerBound && !privateChannel) {
+                    _state.value = baseState.copy(error = "Kuan API history requires local-only web access with a password")
+                    return@launch
+                }
                 server = startWebServer(port = port, host = host) {
-                    configureWebApi(context, chatService, conversationRepo, folderRepo, settingsStore, filesManager)
+                    configureWebApi(context, chatService, conversationRepo, folderRepo, settingsStore, filesManager) {
+                        privateChannel || kuanSession.state.value.let { !it.loading && !it.ownerBound }
+                    }
                 }.start(wait = false)
 
                 _state.value = baseState.copy(isRunning = true)

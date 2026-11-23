@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.data.kuan.kuanRoute
+
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -119,9 +121,10 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
 
     val filteredProviders = remember(settings.providers, searchQuery) {
         if (searchQuery.isBlank()) {
-            settings.providers
+            settings.providers.filter { it.kuanRoute() == null }
         } else {
             settings.providers.filter { provider ->
+                if (provider.kuanRoute() != null) return@filter false
                 provider.name.contains(searchQuery, ignoreCase = true)
             }
         }

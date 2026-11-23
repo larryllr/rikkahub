@@ -88,7 +88,18 @@ fun ChainOfThoughtScope.ChatMessageServerToolStep(tool: UIMessagePart.ServerTool
         },
         label = {
             Text(
-                text = stringResource(R.string.chat_message_tool_call_generic, tool.toolName),
+                text = if (tool.toolName == "kuan_background") {
+                    stringResource(if (loading) R.string.kuan_server_accepted else R.string.kuan_server_completed)
+                } else if (tool.toolName == "image_generation") {
+                    val stage = (tool.metadata?.get("stage") as? JsonPrimitive)?.contentOrNull
+                    stringResource(when (stage) {
+                        "reading" -> R.string.kuan_image_reading
+                        "preparing" -> R.string.kuan_image_preparing
+                        "processing" -> R.string.kuan_image_processing
+                        "receiving" -> R.string.kuan_image_receiving
+                        else -> if (loading) R.string.kuan_image_processing else R.string.kuan_image_complete
+                    })
+                } else stringResource(R.string.chat_message_tool_call_generic, tool.toolName),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.shimmer(isLoading = loading),

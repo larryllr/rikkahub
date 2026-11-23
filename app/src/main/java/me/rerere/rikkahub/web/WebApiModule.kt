@@ -5,6 +5,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationCallPipeline
+import io.ktor.server.application.call
 import io.ktor.server.application.install
 import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.AuthenticationFailedCause
@@ -13,6 +15,7 @@ import io.ktor.server.auth.authenticate
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.receive
+import io.ktor.server.request.path
 import io.ktor.server.response.respond
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
@@ -59,9 +62,17 @@ fun Application.configureWebApi(
     conversationRepo: ConversationRepository,
     folderRepo: FolderRepository,
     settingsStore: SettingsStore,
-    filesManager: FilesManager
+    filesManager: FilesManager,
+    canExposeData: () -> Boolean = { true },
 ) {
     val jwtEnabled = settingsStore.settingsFlow.value.webServerJwtEnabled
+
+    intercept(ApplicationCallPipeline.Plugins) {
+        if (call.request.path().startsWith("/api") && !canExposeData()) {
+            call.respond(HttpStatusCode.Forbidden, ErrorResponse("Protected local profile", 403))
+            finish()
+        }
+    }
 
     install(ContentNegotiation) {
         json(JsonInstant)

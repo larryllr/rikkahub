@@ -426,6 +426,14 @@ class ResponseAPI(
                                 addContentItem(MessageRole.USER, listOf(part))
                             }
 
+                            is UIMessagePart.Document -> if (part.url.isKuanAssetRef()) {
+                                if (contentBuffer.isNotEmpty()) {
+                                    addContentItem(MessageRole.ASSISTANT, contentBuffer)
+                                    contentBuffer.clear()
+                                }
+                                addContentItem(MessageRole.USER, listOf(part))
+                            }
+
                             is UIMessagePart.Text -> {
                                 contentBuffer.add(part)
                             }
@@ -535,7 +543,9 @@ class ResponseAPI(
     }
 
     private fun JsonArrayBuilder.addUserItems(message: UIMessage) {
-        val contentParts = message.parts.filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
+        val contentParts = message.parts.filter {
+            it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Document && it.url.isKuanAssetRef()
+        }
         if (contentParts.isNotEmpty()) {
             addContentItem(message.role, contentParts)
         }
@@ -562,7 +572,10 @@ class ResponseAPI(
 
                             is UIMessagePart.Image -> {
                                 add(buildJsonObject {
-                                    part.encodeBase64().onSuccess { encodedImage ->
+                                    if (part.url.isKuanAssetRef()) {
+                                        put("type", "input_image")
+                                        put("image_url", part.url)
+                                    } else part.encodeBase64().onSuccess { encodedImage ->
                                         put("type", "input_image")
                                         put("image_url", encodedImage.base64)
                                     }.onFailure {
@@ -573,6 +586,12 @@ class ResponseAPI(
                                 })
                             }
 
+                            is UIMessagePart.Document -> if (part.url.isKuanAssetRef()) add(buildJsonObject {
+                                put("type", "input_file")
+                                put("file_data", part.url)
+                                put("filename", part.fileName)
+                                put("mime_type", part.mime)
+                            })
                             else -> {}
                         }
                     }
@@ -770,7 +789,7 @@ private fun isModelAllowTemperature(model: Model): Boolean {
 }
 
 private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
-    val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
+    val gonnaSend = count { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Document && it.url.isKuanAssetRef() }
     val texts = filter { it is UIMessagePart.Text }.size
     return gonnaSend == texts && texts == 1
 }

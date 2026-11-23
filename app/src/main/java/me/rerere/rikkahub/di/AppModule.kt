@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.di
 
-import com.google.firebase.Firebase
-import com.google.firebase.analytics.analytics
-import com.google.firebase.crashlytics.crashlytics
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.ChatRequestFactory
@@ -43,7 +40,6 @@ val appModule = module {
 
     single {
         UpdateChecker(
-            client = get(),
             appScope = get(),
         )
     }
@@ -58,14 +54,6 @@ val appModule = module {
 
     single {
         TTSManager(get())
-    }
-
-    single {
-        Firebase.crashlytics
-    }
-
-    single {
-        Firebase.analytics
     }
 
     single {
@@ -154,6 +142,7 @@ val appModule = module {
             filesManager = get(),
             folderRepository = get(),
             backgroundShellManager = get(),
+            kuanJobs = get(),
         )
     }
 
@@ -177,7 +166,8 @@ val appModule = module {
             conversationRepo = get(),
             folderRepo = get(),
             settingsStore = get(),
-            filesManager = get()
+            filesManager = get(),
+            kuanSession = get(),
         )
     }
 }

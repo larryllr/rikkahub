@@ -84,6 +84,7 @@ fun Settings.getSelectedASRProvider(): ASRProviderSetting? {
  */
 fun Model.findProvider(providers: List<ProviderSetting>, checkOverwrite: Boolean = true): ProviderSetting? {
     val provider = findModelProviderFromList(providers) ?: return null
+    if (provider is ProviderSetting.OpenAI && provider.managedGroup != null) return provider
     val providerOverwrite = this.providerOverwrite
     if (checkOverwrite && providerOverwrite != null) {
         return providerOverwrite.copyProvider(models = emptyList())

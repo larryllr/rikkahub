@@ -229,7 +229,7 @@ class ChatCompletionsAPI(
         // trySend 在缓冲满时会静默丢弃 delta，导致回复中间缺字 (#1295)，因此缓冲必须无界
     }.buffer(Channel.UNLIMITED).flowOn(Dispatchers.IO)
 
-    private fun buildChatCompletionRequest(
+    internal fun buildChatCompletionRequest(
         messages: List<UIMessage>,
         params: TextGenerationParams,
         providerSetting: ProviderSetting.OpenAI,
@@ -502,7 +502,7 @@ class ChatCompletionsAPI(
                         }
                     }
                     group.parts
-                        .filter { it is UIMessagePart.Text || it is UIMessagePart.Image }
+                        .filter { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Document && it.url.isKuanAssetRef() }
                         .forEach { contentBuffer.add(it) }
                 }
 
@@ -554,6 +554,7 @@ class ChatCompletionsAPI(
             when (part) {
                 is UIMessagePart.Text -> part.text.isNotBlank()
                 is UIMessagePart.Image -> part.url.isNotBlank()
+                is UIMessagePart.Document -> part.url.isKuanAssetRef()
                 else -> false
             }
         }
@@ -617,7 +618,10 @@ class ChatCompletionsAPI(
 
                             is UIMessagePart.Image -> {
                                 add(buildJsonObject {
-                                    part.encodeBase64().onSuccess { encodedImage ->
+                                    if (part.url.isKuanAssetRef()) {
+                                        put("type", "image_url")
+                                        put("image_url", buildJsonObject { put("url", part.url) })
+                                    } else part.encodeBase64().onSuccess { encodedImage ->
                                         put("type", "image_url")
                                         put("image_url", buildJsonObject {
                                             put("url", encodedImage.base64)
@@ -630,6 +634,7 @@ class ChatCompletionsAPI(
                                 })
                             }
 
+                            is UIMessagePart.Document -> if (part.url.isKuanAssetRef()) add(kuanFilePart(part))
                             else -> {}
                         }
                     }
@@ -674,7 +679,10 @@ class ChatCompletionsAPI(
 
                             is UIMessagePart.Image -> {
                                 add(buildJsonObject {
-                                    part.encodeBase64().onSuccess { encodedImage ->
+                                    if (part.url.isKuanAssetRef()) {
+                                        put("type", "image_url")
+                                        put("image_url", buildJsonObject { put("url", part.url) })
+                                    } else part.encodeBase64().onSuccess { encodedImage ->
                                         put("type", "image_url")
                                         put("image_url", buildJsonObject {
                                             put("url", encodedImage.base64)
@@ -687,6 +695,7 @@ class ChatCompletionsAPI(
                                 })
                             }
 
+                            is UIMessagePart.Document -> if (part.url.isKuanAssetRef()) add(kuanFilePart(part))
                             else -> {}
                         }
                     }
@@ -845,9 +854,18 @@ class ChatCompletionsAPI(
     }
 
     private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
-        val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
+        val gonnaSend = count { it is UIMessagePart.Text || it is UIMessagePart.Image || it is UIMessagePart.Document && it.url.isKuanAssetRef() }
         val texts = filter { it is UIMessagePart.Text }.size
         return gonnaSend == texts && texts == 1
+    }
+
+    private fun kuanFilePart(part: UIMessagePart.Document) = buildJsonObject {
+        put("type", "file")
+        put("file", buildJsonObject {
+            put("file_data", part.url)
+            put("filename", part.fileName)
+            put("content_type", part.mime)
+        })
     }
 }
 

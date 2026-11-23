@@ -427,6 +427,10 @@ class RouteActivity : ComponentActivity() {
                                 SettingPage()
                             }
 
+                            entry<Screen.KuanAccount> {
+                                me.rerere.rikkahub.ui.pages.setting.KuanAccountPage()
+                            }
+
                             entry<Screen.Backup> {
                                 BackupPage()
                             }
@@ -709,6 +713,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Setting : Screen
+
+    @Serializable
+    data object KuanAccount : Screen
 
     @Serializable
     data object Backup : Screen

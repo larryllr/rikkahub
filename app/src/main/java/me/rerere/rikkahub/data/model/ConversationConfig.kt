@@ -4,8 +4,10 @@ import kotlinx.serialization.Serializable
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.BuiltInTools
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import kotlin.uuid.Uuid
@@ -26,7 +28,11 @@ data class ConversationConfig(
     val mcpServers: Set<Uuid> = emptySet(),
     val workspaceId: Uuid? = null,
     val enabledSkills: Set<String> = emptySet(),
+    val managedGroup: String? = null,
 )
+
+private fun Model.managedGroup(settings: Settings): String? =
+    (findProvider(settings.providers, checkOverwrite = false) as? ProviderSetting.OpenAI)?.managedGroup
 
 // 内置搜索是模型的开关，不在助手上，由调用方另行填入
 private fun Assistant.toConversationConfig() = ConversationConfig(
@@ -65,6 +71,8 @@ fun Conversation.withAssistantUpdate(updated: Assistant, settings: Settings): Co
     } else {
         copy(
             config = updated.toConversationConfig().copy(
+                managedGroup = if (updated.chatModelId == config.chatModelId) config.managedGroup
+                    else settings.findModelById(updated.chatModelId)?.managedGroup(settings),
                 builtInSearch = if (updated.chatModelId == config.chatModelId) {
                     config.builtInSearch
                 } else {
@@ -112,8 +120,10 @@ fun Settings.getAssistantOf(conversation: Conversation): Assistant {
 fun Settings.getChatModelOf(conversation: Conversation): Model? {
     val assistantModel = findModelById(getStoredAssistantOf(conversation).chatModelId ?: chatModelId)
     val config = conversation.config ?: return assistantModel
-    // 固定的模型被删除后退回助手当前的模型，内置搜索也跟随该模型自身的开关
-    val model = findModelById(config.chatModelId) ?: return assistantModel
+    val pinned = findModelById(config.chatModelId)
+    // Preserve upstream provider fallback, but never silently move a managed conversation to another account or group.
+    if (config.managedGroup != null && pinned?.managedGroup(this) != config.managedGroup) return null
+    val model = pinned ?: return assistantModel
     return model.copy(
         tools = if (config.builtInSearch) model.tools + BuiltInTools.Search else model.tools - BuiltInTools.Search
     )
@@ -126,14 +136,19 @@ fun Settings.getChatModelOf(conversation: Conversation): Model? {
 fun Conversation.bindConfig(settings: Settings): Conversation {
     val model = settings.getChatModelOf(this)
     val builtInSearch = model != null && BuiltInTools.Search in model.tools
+    val managedGroup = model?.managedGroup(settings)
     val config = config
     if (config != null) {
-        if (model == null || model.id == config.chatModelId) return this
-        return copy(config = config.copy(chatModelId = model.id, builtInSearch = builtInSearch))
+        if (model == null || model.id == config.chatModelId && managedGroup == config.managedGroup) return this
+        return copy(config = config.copy(chatModelId = model.id, builtInSearch = builtInSearch, managedGroup = managedGroup))
     }
     val assistant = settings.getAssistantOf(this)
     return copy(
-        config = assistant.toConversationConfig().copy(chatModelId = model?.id, builtInSearch = builtInSearch),
+        config = assistant.toConversationConfig().copy(
+            chatModelId = model?.id,
+            builtInSearch = builtInSearch,
+            managedGroup = managedGroup,
+        ),
         // 旧版本允许会话单独绑定注入，这类会话保留自己的绑定
         modeInjectionIds = modeInjectionIds.ifEmpty { assistant.modeInjectionIds },
         lorebookIds = lorebookIds.ifEmpty { assistant.lorebookIds },

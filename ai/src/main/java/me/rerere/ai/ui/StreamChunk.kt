@@ -15,6 +15,10 @@ import me.rerere.ai.core.TokenUsage
 @Serializable
 sealed class StreamChunk {
     @Serializable
+    @SerialName("reset_attempt")
+    data object ResetAttempt : StreamChunk()
+
+    @Serializable
     @SerialName("text_start")
     data class TextStart(
         val id: String,

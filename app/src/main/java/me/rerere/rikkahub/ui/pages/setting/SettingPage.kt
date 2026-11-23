@@ -153,6 +153,16 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             contentPadding = innerPadding + PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            item("kuanAccount") {
+                CardGroup {
+                    item(
+                        onClick = { navController.navigate(Screen.KuanAccount) },
+                        leadingContent = { CardGroupIcon(HugeIcons.ServerStack01) },
+                        headlineContent = { Text(stringResource(R.string.kuan_account)) },
+                    )
+                }
+            }
+
             if (settings.isNotConfigured()) {
                 item {
                     ProviderConfigWarningCard(

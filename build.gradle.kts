@@ -4,16 +4,14 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.ksp) apply false
-    alias(libs.plugins.google.services) apply false
-    alias(libs.plugins.firebase.crashlytics) apply false
     alias(libs.plugins.android.test) apply false
     alias(libs.plugins.baselineprofile) apply false
     alias(libs.plugins.spotless)
 }
 
 spotless {
-    // 只格式化相对 origin/master 有改动的文件，避免一次性重排整个仓库
-    ratchetFrom("origin/master")
+    // Keep formatting scoped to the fork's changes, including in a detached checkout.
+    ratchetFrom("2435dbdf4690fe26d424b8d1ab778bcde9c6cd75")
 
     // Spotless 只从 .editorconfig 读标准属性，ktlint 的风格和规则开关得写在这里
     val ktlintVersion = libs.versions.ktlint.get()

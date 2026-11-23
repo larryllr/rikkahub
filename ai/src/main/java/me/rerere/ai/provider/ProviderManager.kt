@@ -60,7 +60,7 @@ class ProviderManager(
     fun <T : ProviderSetting> getProviderByType(setting: T): Provider<T> {
         @Suppress("UNCHECKED_CAST")
         return when (setting) {
-            is ProviderSetting.OpenAI -> getProvider("openai")
+            is ProviderSetting.OpenAI -> getProvider(if (setting.managedGroup == null) "openai" else "kuan")
             is ProviderSetting.Google -> getProvider("google")
             is ProviderSetting.Claude -> getProvider("claude")
             is ProviderSetting.ChatGPT -> getProvider("chatgpt")
