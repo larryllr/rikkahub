@@ -138,6 +138,7 @@ import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
 import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
+import me.rerere.rikkahub.ui.pages.mediacreation.KuanStudioPage
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.openUsageAccessSettings
@@ -445,6 +446,10 @@ class RouteActivity : ComponentActivity() {
                                 MediaCreationSessionsPage()
                             }
 
+                            entry<Screen.KuanStudio> {
+                                KuanStudioPage()
+                            }
+
                             // 从会话列表展开（容器变换），页面本身只做淡入淡出，避免和平移打架
                             entry<Screen.MediaCreation>(
                                 metadata = NavDisplay.transitionSpec { fadeIn() togetherWith fadeOut() }
@@ -727,6 +732,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object MediaCreationSessions : Screen
+
+    @Serializable
+    data object KuanStudio : Screen
 
     @Serializable
     data class MediaCreation(val id: String) : Screen

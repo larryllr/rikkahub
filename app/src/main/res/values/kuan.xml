@@ -6,6 +6,10 @@
   <string name="kuan_account">Kuan API</string>
   <string name="kuan_custom_setup">Custom</string>
   <string name="kuan_source_code">App source code</string>
+  <string name="kuan_studio_title">Kuan API Image Studio</string>
+  <string name="kuan_studio_options">Image Studio options</string>
+  <string name="kuan_studio_load_failed">Image Studio could not load.</string>
+  <string name="kuan_studio_no_file_handler">The file is saved, but no installed app can open it.</string>
   <string name="kuan_sign_in_action">Sign in to Kuan API</string>
   <string name="kuan_sign_in">Sign in</string>
   <string name="kuan_sign_out">Sign out</string>

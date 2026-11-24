@@ -1,0 +1,29 @@
+{
+  "upstream": "freestylefly/awesome-gpt-image-2",
+  "revision": "63e6176fa01be51c000108dacd72716d3e46784b",
+  "license": "MIT",
+  "cases": 541,
+  "templates": 22,
+  "templateVariants": 101,
+  "categories": 13,
+  "styles": 19,
+  "scenes": 10,
+  "comparisons": 7,
+  "release": "kuanapi-image-workbench-audit-20261025",
+  "hashes": {
+    "data/cases.json": "a9ef652dffdac0802c656e4770f9793315292fa78e955d3e8c6e0e6346eb7da8",
+    "data/style-library.json": "80f5cae039d0d6f312f0e2de2c9b3fc8a806640b0d517c120d704a71c5e4aa72",
+    "docs/templates.md": "f8e5009821d2099da51e23ab467ec9e938fdab34856e439ac36138c155eec926",
+    "LICENSE": "27a75c48bac29eb78f43c19f75c4e175974c8f1046d848d5562eae1ead2f1176",
+    "comparison/image25-demo-mug-W2JHOIWR.png": "e74807d9a198c4db244ccfe01579930029fab6daa7bab08369ed82b5ad62c1a2",
+    "comparison/image25-case532-run1-HJPQR2YT.png": "e79583d6003f3b01e62166ae5cb95e2020ed348d5a924e7af9e321ae8d39dc80",
+    "comparison/image25-case527-run1-MCYHW5UG.png": "0d83a536f34893daeaa90150f18f7157c8165a36f12d305bf567e321be992627",
+    "comparison/image25-case523-run1-LKSM3PP3.png": "e6b8a068836b2ab3b027567ad3d376228856de96920f5cf45de732534c75280f",
+    "comparison/image25-case510-run1-IZEO64N7.png": "5fd4ed3164787dfc42c8de6088d3ab9b6e9cb9c04a164d0bae95ec04d10f5040",
+    "src/image25/cases.js": "fce6f8ad4e189872575bc49461e88e1ae849e55ca33bf1a4421ff8e3e5dbbf44",
+    "src/image25/realCases.js": "2ea9c5345b493388bb95fe126c12b9d2d161e6a1f95df81cd596230dc38ebfe2",
+    "src/image25/additionalCases.js": "2fe5732029409752322cee65907e0f9ccf9f6d07f3d7440b588afb2007da4add"
+  },
+  "archive_revision": "b477278bb2a36d4c59655eb0daa4ce48e8dbc4c4",
+  "archive_sha256": "fd7c856426682af6f52a1ac3220b70ec45ce7740b5a8e87c3b9b96fa02f0e3dd"
+}

@@ -1,4 +1,4 @@
-"""Publish or withdraw the first native Android channel without changing legacy channels."""
+"""Advance the native Android channel without changing the classic APK or update manifest."""
 
 from argparse import ArgumentParser
 from hashlib import sha256 as new_sha256
@@ -9,8 +9,12 @@ import shutil
 import tempfile
 
 
-VERSION = '2.0.0'
-VERSION_CODE = 3
+VERSION = '2.0.1'
+VERSION_CODE = 4
+PREVIOUS_VERSION = '2.0.0'
+PREVIOUS_CODE = 3
+PREVIOUS_MANIFEST_SHA = '97b3fdb57fbc0d2c07698bf4e7bd7a205dcba8762e70eee8f80a331d69914071'
+PREVIOUS_PAGE_SHA = 'e4e23cf44fc3c3b1249af12ddd8d7d785137d04899f88c4a94d1ccf18d6c2399'
 PACKAGE = 'com.kuanapi.app.nativepreview'
 ORIGIN = 'https://kuanapi.kuankuan.de5.net'
 PUBLIC = Path('/opt/kuanapi-ha/sub2api/data/public/downloads')
@@ -56,21 +60,22 @@ def protected_snapshot(approval):
                                            for path in protected}}
 
 
-def verify_release(channel):
+def verify_release(channel, version, code, *, exact=False):
     require(not channel.is_symlink() and channel.is_dir(), 'Expected a real channel directory')
-    release = channel / VERSION
+    release = channel / version
+    require(not release.is_symlink() and release.is_dir(), 'Expected a real release directory')
     manifest = read_json(channel / 'latest.json')
-    require(manifest.get('packageName') == PACKAGE and manifest.get('version') == VERSION
-            and manifest.get('versionCode') == VERSION_CODE, 'Unexpected update identity')
+    require(manifest.get('packageName') == PACKAGE and manifest.get('version') == version
+            and manifest.get('versionCode') == code, 'Unexpected update identity')
     entries = manifest.get('downloads', [])
     require(len(entries) == len(ABIS) and {item['abi'] for item in entries} == set(ABIS),
             'Each supported architecture needs one release APK')
     for item in entries:
-        name = f"kuanapi-{VERSION}-{item['abi']}.apk"
+        name = f"kuanapi-{version}-{item['abi']}.apk"
         file = release / name
-        require(item['name'] == name and item['url'] == f'{ORIGIN}/downloads/mobile-native/{VERSION}/{name}'
+        require(item['name'] == name and item['url'] == f'{ORIGIN}/downloads/mobile-native/{version}/{name}'
                 and item['bytes'] == file.stat().st_size and item['sha256'] == sha256(file), 'APK differs from update metadata')
-    names = {'kuanapi-2.0.0-source.zip', 'logo.png', *(item['name'] for item in entries)}
+    names = {f'kuanapi-{version}-source.zip', 'logo.png', *(item['name'] for item in entries)}
     expected = {}
     for line in (release / 'SHA256SUMS.txt').read_text(encoding='ascii').splitlines():
         checksum, name = line.split('  ', 1)
@@ -78,19 +83,24 @@ def verify_release(channel):
                 'Release checksum file does not match')
         expected[name] = checksum
     require(set(expected) == names and {path.name for path in release.iterdir()} == names | {'SHA256SUMS.txt'}
-            and {p.name for p in channel.iterdir()} == {VERSION, 'latest.json'}
-            and not any(path.is_symlink() for path in channel.rglob('*')), 'Unexpected release members')
+            and not (channel / 'latest.json').is_symlink()
+            and not any(path.is_symlink() for path in release.iterdir()), 'Unexpected release members')
+    if exact:
+        require({p.name for p in channel.iterdir()} == {version, 'latest.json'}, 'Unexpected staging channel members')
     return {'manifest': sha256(channel / 'latest.json'), 'release': expected}
 
 
-def withdraw_into(destination):
-    # Preserve the public bytes in a private directory on the same filesystem.
-    PAGE.rename(destination / PAGE.name)
-    try:
-        CHANNEL.rename(destination / CHANNEL.name)
-    except OSError:
-        (destination / PAGE.name).rename(PAGE)
-        raise
+def replace_public(source, target):
+    with tempfile.TemporaryDirectory(prefix='.kuan-native-pointer-', dir=target.parent) as temporary:
+        candidate = Path(temporary) / target.name
+        shutil.copyfile(source, candidate)
+        candidate.chmod(0o644)
+        candidate.replace(target)
+
+
+def switch_pointers(manifest, page):
+    replace_public(page, PAGE)
+    replace_public(manifest, CHANNEL / 'latest.json')
 
 
 def main():
@@ -101,40 +111,64 @@ def main():
     parser.add_argument('staging', type=Path)
     args = parser.parse_args()
     incoming = args.staging.resolve(strict=True)
-    prepared = verify_release(incoming / CHANNEL.name)
+    prepared = verify_release(incoming / CHANNEL.name, VERSION, VERSION_CODE, exact=True)
     staging_page = incoming / PAGE.name
     require(staging_page.is_file() and not staging_page.is_symlink(), 'Missing public Android download page')
     page_sha = sha256(staging_page)
+    content = staging_page.read_text(encoding='utf-8')
+    require('id="native"' in content and f'mobile-native/{VERSION}/kuanapi-{VERSION}-arm64-v8a.apk' in content
+            and 'kuanapi-1.6.10.apk' in content, 'The new shelf must expose both editions')
+    previous = incoming / 'previous'
+    old_page = previous / PAGE.name
+    old_manifest = previous / 'latest.json'
+    live_manifest = CHANNEL / 'latest.json'
+    published = CHANNEL / VERSION
 
     with approval.publication_locks():
         baseline = protected_snapshot(approval)
         if args.action == 'withdraw':
-            require(verify_release(CHANNEL) == prepared and sha256(PAGE) == page_sha, 'The live release no longer matches staging')
+            require(verify_release(CHANNEL, VERSION, VERSION_CODE) == prepared and sha256(PAGE) == page_sha,
+                    'The live release no longer matches staging')
+            require(sha256(old_page) == PREVIOUS_PAGE_SHA and sha256(old_manifest) == PREVIOUS_MANIFEST_SHA,
+                    'The saved rollback bytes do not match the previous release')
             private = Path(tempfile.mkdtemp(prefix='kuan-native-withdrawn-', dir=PUBLIC.parent.parent))
-            withdraw_into(private)
+            try:
+                switch_pointers(old_manifest, old_page)
+                verify_release(CHANNEL, PREVIOUS_VERSION, PREVIOUS_CODE)
+                published.rename(private / VERSION)
+            except Exception:
+                switch_pointers(incoming / CHANNEL.name / 'latest.json', staging_page)
+                raise
             require(protected_snapshot(approval) == baseline, 'A protected legacy release changed concurrently')
             print(json.dumps({'withdrawn': VERSION, 'files_moved_to': str(private)}))
             return
 
-        require(not os.path.lexists(CHANNEL) and not os.path.lexists(PAGE), 'An Android native channel or shelf already exists')
+        old_release = verify_release(CHANNEL, PREVIOUS_VERSION, PREVIOUS_CODE)
+        require(sha256(PAGE) == PREVIOUS_PAGE_SHA and old_release['manifest'] == PREVIOUS_MANIFEST_SHA,
+                'The public 2.0.0 baseline changed; review before advancing the channel')
+        require(not os.path.lexists(published) and not os.path.lexists(previous), 'Release version already staged or published')
+        previous.mkdir(mode=0o700)
+        shutil.copyfile(PAGE, old_page)
+        shutil.copyfile(live_manifest, old_manifest)
         with tempfile.TemporaryDirectory(prefix='kuan-native-publish-', dir=PUBLIC.parent.parent) as temporary:
             staged = Path(temporary)
             shutil.copytree(incoming / CHANNEL.name, staged / CHANNEL.name)
             shutil.copyfile(staging_page, staged / PAGE.name)
             for path in (staged / CHANNEL.name, *(staged / CHANNEL.name).rglob('*'), staged / PAGE.name):
                 path.chmod(0o755 if path.is_dir() else 0o644)
-            require(verify_release(staged / CHANNEL.name) == prepared and sha256(staged / PAGE.name) == page_sha,
+            require(verify_release(staged / CHANNEL.name, VERSION, VERSION_CODE, exact=True) == prepared and sha256(staged / PAGE.name) == page_sha,
                     'The staged public bytes changed during transfer')
-            (staged / CHANNEL.name).rename(CHANNEL)
-            page_published = False
+            (staged / CHANNEL.name / VERSION).rename(published)
             try:
-                os.link(staged / PAGE.name, PAGE)
-                page_published = True
+                switch_pointers(staged / CHANNEL.name / 'latest.json', staged / PAGE.name)
+                require(verify_release(CHANNEL, VERSION, VERSION_CODE) == prepared and sha256(PAGE) == page_sha,
+                        'The live native files do not match the staged release')
+                require(all(sha256(CHANNEL / PREVIOUS_VERSION / name) == checksum
+                            for name, checksum in old_release['release'].items()), 'The previous native release changed concurrently')
                 require(protected_snapshot(approval) == baseline, 'A protected legacy release changed concurrently')
             except Exception:
-                if page_published:
-                    PAGE.unlink()
-                CHANNEL.rename(staged / CHANNEL.name)
+                switch_pointers(old_manifest, old_page)
+                published.rename(staged / CHANNEL.name / VERSION)
                 raise
         print(json.dumps({'published': VERSION, 'source_channel': prepared, 'download_page': page_sha,
                           'legacy_untouched': True, 'chat': baseline['chat']}))

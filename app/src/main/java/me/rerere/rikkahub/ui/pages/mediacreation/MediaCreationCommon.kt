@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaScannerConnection
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -43,6 +44,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Play
@@ -55,6 +57,7 @@ import me.rerere.rikkahub.data.model.MediaCreationParams
 import me.rerere.rikkahub.data.model.MediaCreationStatus
 import me.rerere.rikkahub.utils.getActivity
 import java.io.File
+import kotlin.coroutines.resume
 
 internal val ImageRole.label: String
     @Composable get() = when (this) {
@@ -251,17 +254,29 @@ internal fun MediaThumbnail(
 /**
  * 把生成的图片或视频存进系统相册。
  */
-internal suspend fun saveMediaToGallery(context: Context, file: File, mimeType: String) = withContext(Dispatchers.IO) {
+internal suspend fun saveMediaToGallery(
+    context: Context,
+    file: File,
+    mimeType: String,
+    requestedName: String? = null,
+    album: String? = null,
+): Uri? = withContext(Dispatchers.IO) {
     check(file.isFile) { context.getString(R.string.media_creation_page_file_missing) }
     val isVideo = mimeType.startsWith("video/")
-    val name = "RikkaHub_${System.currentTimeMillis()}.${file.extension}"
+    val name = requestedName?.let {
+        val stem = if (it.substringAfterLast('.', "").lowercase() in setOf("png", "jpg", "jpeg", "webp", "gif")) {
+            it.substringBeforeLast('.')
+        } else it
+        "$stem.${file.extension}"
+    } ?: "RikkaHub_${System.currentTimeMillis()}.${file.extension}"
     val directory = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, directory)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, album?.let { "$directory/$it" } ?: directory)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val collection = if (isVideo) {
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI
@@ -274,10 +289,12 @@ internal suspend fun saveMediaToGallery(context: Context, file: File, mimeType: 
             val output = resolver.openOutputStream(uri)
                 ?: error(context.getString(R.string.media_creation_page_gallery_write_failed))
             output.use { target -> file.inputStream().use { it.copyTo(target) } }
+            check(resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null) == 1)
         } catch (e: Exception) {
             resolver.delete(uri, null, null)
             throw e
         }
+        uri
     } else {
         // Android 9 及以下直接写公共目录，需要存储权限
         val permission = Manifest.permission.WRITE_EXTERNAL_STORAGE
@@ -286,12 +303,18 @@ internal suspend fun saveMediaToGallery(context: Context, file: File, mimeType: 
             error(context.getString(R.string.media_creation_page_storage_permission_required))
         }
         // 批量保存时同一毫秒里会有好几个文件，重名的另取一个名字，不能互相覆盖（Android 10 起由 MediaStore 处理）
-        val dir = Environment.getExternalStoragePublicDirectory(directory)
+        val publicDir = Environment.getExternalStoragePublicDirectory(directory)
+        val dir = album?.let { File(publicDir, it) } ?: publicDir
+        check(dir.isDirectory || dir.mkdirs())
         val target = generateSequence(0) { it + 1 }
             .map { if (it == 0) File(dir, name) else File(dir, "${name.substringBeforeLast('.')}_$it.${file.extension}") }
             .first { !it.exists() }
         file.copyTo(target)
-        MediaScannerConnection.scanFile(context, arrayOf(target.absolutePath), arrayOf(mimeType), null)
+        suspendCancellableCoroutine { result ->
+            MediaScannerConnection.scanFile(context, arrayOf(target.absolutePath), arrayOf(mimeType)) { _, uri ->
+                result.resume(uri)
+            }
+        }
     }
 }
 

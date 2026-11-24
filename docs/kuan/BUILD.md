@@ -1,12 +1,12 @@
 # 宽 API 原生候选：构建与验收
 
-记录日期：2026-11-23（北京时间）。此分支从 RikkaHub 3.3.1 派生，宽 API 2.0 使用与经典版分离的分发渠道。见 [2.0 发布与撤回](RELEASE-2.0.md)。
+记录日期：2026-11-24（北京时间）。此分支从 RikkaHub 3.3.1 派生，宽 API 2.0 使用与经典版分离的分发渠道。见 [2.0.1 发布与撤回](RELEASE-2.0.1.md) 和 [2.0.0 首次发布](RELEASE-2.0.md)。
 
 ## 源码与版本
 
 - 上游：<https://github.com/rikkahub/rikkahub/tree/2435dbdf4690fe26d424b8d1ab778bcde9c6cd75>，标签 `3.3.1`。
-- 基准宽 API 正式 Android：`1.6.10 / code 33`，Chat 资源 `7fedc4145d4207ee1a0a`，来源是两个域名的公开清单。本分支不会改它们。
-- 2.0 保留预览的包名 `com.kuanapi.app.nativepreview`，版本为 `2.0.0 / code 3`，Debug 变体额外有 `.debug`。它与经典宽 API `com.kuanapi.app` 及官方 RikkaHub 并装；用原生版签名可升级宽 API 原生预览。
+- 基准宽 API 正式 Android：`1.6.10 / code 33`。安装包和安装包更新清单不改；经典版设置中新下载链接随单独的 Chat 资源包发布。
+- 2.0 保留预览的包名 `com.kuanapi.app.nativepreview`，版本为 `2.0.1 / code 4`，Debug 变体额外有 `.debug`。它与经典宽 API `com.kuanapi.app` 及官方 RikkaHub 并装；用原生版签名可升级 2.0.0。
 - 对应客户端源保留 AGPL-3.0 和原作者版权，参见根目录 `LICENSE`。对外分发派生 APK 时同时提供与安装包精确对应的完整源码、补丁、许可证和构建步骤。此仓只调用服务端 HTTP 公开接口，不包含私有服务端源码、数据库、用户内容、生产签名或配置。
 
 ## 构建要求
@@ -20,6 +20,9 @@ corepack pnpm --dir web-ui install --frozen-lockfile
 npm --prefix tools/kuan-presentation ci
 npm --prefix tools/kuan-presentation test
 npm --prefix tools/kuan-presentation run build
+npm --prefix tools/kuan-studio ci
+npm --prefix tools/kuan-studio test
+npm --prefix tools/kuan-studio run build
 .\gradlew.bat --console=plain :app:assembleGithubDebug :app:testGithubDebugUnitTest
 .\gradlew.bat --console=plain :app:assembleGithubRelease
 ```
@@ -31,7 +34,7 @@ Windows 若因路径编码导致 Gradle JVM test worker 加载失败，显式执
 Android 设备用例使用 `:app:assembleGithubDebugAndroidTest`。安装 Debug 和测试 APK 后，在测试设备运行以下用例。夹具在 OkHttp 拦截请求并返回合成数据。
 
 ```powershell
-adb -s <test-device> shell am instrument -w -r -e class "me.rerere.rikkahub.data.kuan.KuanNativeContractTest,me.rerere.rikkahub.data.kuan.KuanFollowUpsTest" com.kuanapi.app.nativepreview.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb -s <test-device> shell am instrument -w -r -e class "me.rerere.rikkahub.data.kuan.KuanNativeContractTest,me.rerere.rikkahub.data.kuan.KuanFollowUpsTest,me.rerere.rikkahub.data.kuan.KuanStudioTest" com.kuanapi.app.nativepreview.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 `tools/kuan-presentation` 是 `app/src/main/assets/kuan-presentation.js` 的对应源码。它源于宽 API 维护仓的 `frontend/openui/{web-presentation,declarative-forms}.mjs`，维护基准记录为 `45c62fb5380a9d2608b10ecbb42810ae2f79f1c8`。本次扩展了动作标识、空值输入和历史文本投影。仓内包含 Acorn 8.15.0 和 Acorn JSX 5.3.2 的许可证文本与 npm 锁定记录。
@@ -68,4 +71,4 @@ GitHub Release 构建默认读取 `https://kuanapi.kuankuan.de5.net/downloads/mo
 
 ## 生产边界
 
-不要运行上游 `.github/workflows/release.yml` 或打发布标签作为本地验收。原生 2.0 单独分发，不写经典版清单、开发运行时、现有 Chat 静态版本、服务配置、DNS/Tunnel 或正式账号数据，也不重启 Sub2API、Grok、Copilot。旧历史需走显式导入，本机私有目录不会自动迁移。
+不要运行上游 `.github/workflows/release.yml` 或打发布标签作为本地验收。原生 2.0 单独分发；只有经典版独立的下载入口改动会更新 Chat 静态资源指针，不能用原生 APK 构建改经典版清单、开发运行时、服务配置、DNS/Tunnel 或正式账号数据，也不重启 Sub2API、Grok、Copilot。旧历史需走显式导入，本机私有目录不会自动迁移。

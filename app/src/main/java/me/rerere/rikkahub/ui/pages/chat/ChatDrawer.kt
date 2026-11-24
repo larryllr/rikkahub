@@ -62,7 +62,6 @@ import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.FolderAdd
 import me.rerere.hugeicons.stroke.Image02
-import me.rerere.hugeicons.stroke.ImageToVideo
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LanguageCircle
 import me.rerere.hugeicons.stroke.LookTop
@@ -749,11 +748,10 @@ private fun DrawerActions(navController: Navigator) {
             onTrailingClick = { navController.navigate(Screen.MessageSearch) },
         )
 
-        // 媒体创作入口
         DrawerEntry(
-            icon = HugeIcons.ImageToVideo,
-            text = stringResource(R.string.media_creation_title),
-            onClick = { navController.navigate(Screen.MediaCreationSessions) },
+            icon = HugeIcons.Image02,
+            text = stringResource(R.string.kuan_studio_title),
+            onClick = { navController.navigate(Screen.KuanStudio) },
         )
 
         // 翻译入口

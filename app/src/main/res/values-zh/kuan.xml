@@ -7,6 +7,10 @@
   <string name="kuan_sign_in_action">宽 API 登录</string>
   <string name="kuan_custom_setup">自定义</string>
   <string name="kuan_source_code">应用源码</string>
+  <string name="kuan_studio_title">宽 API 专业生图</string>
+  <string name="kuan_studio_options">专业生图选项</string>
+  <string name="kuan_studio_load_failed">专业生图未能加载。</string>
+  <string name="kuan_studio_no_file_handler">文件已保存，未找到可以打开它的应用。</string>
   <string name="kuan_sign_in">登录</string>
   <string name="kuan_sign_out">退出登录</string>
   <string name="kuan_register">注册</string>
