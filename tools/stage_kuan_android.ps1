@@ -31,7 +31,9 @@ $downloads = foreach ($abi in 'arm64-v8a','x86_64') {
         throw "Unexpected APK identity: $abi"
     }
     $signature = (& (Join-Path $BuildTools 'apksigner.bat') verify --print-certs $apk) -join "`n"
-    if ($LASTEXITCODE -ne 0 -or !$signature.Contains("Signer #1 certificate SHA-256 digest: $certificate")) {
+    $signers = [regex]::Matches($signature, 'certificate SHA-256 digest: ([0-9a-f]{64})') |
+        ForEach-Object { $_.Groups[1].Value }
+    if ($LASTEXITCODE -ne 0 -or !$signers -or @($signers | Where-Object { $_ -ne $certificate }).Count -ne 0) {
         throw "Unexpected APK signing certificate: $abi"
     }
     $zip = [IO.Compression.ZipFile]::OpenRead($apk)
