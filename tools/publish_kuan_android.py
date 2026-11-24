@@ -9,12 +9,12 @@ import shutil
 import tempfile
 
 
-VERSION = '2.0.1'
-VERSION_CODE = 4
-PREVIOUS_VERSION = '2.0.0'
-PREVIOUS_CODE = 3
-PREVIOUS_MANIFEST_SHA = '97b3fdb57fbc0d2c07698bf4e7bd7a205dcba8762e70eee8f80a331d69914071'
-PREVIOUS_PAGE_SHA = 'e4e23cf44fc3c3b1249af12ddd8d7d785137d04899f88c4a94d1ccf18d6c2399'
+VERSION = '2.0.2'
+VERSION_CODE = 5
+PREVIOUS_VERSION = '2.0.1'
+PREVIOUS_CODE = 4
+PREVIOUS_MANIFEST_SHA = '969642589da4064d300db8bb268ea8db1d3d88aba7eaf28c94f2132252660221'
+PREVIOUS_PAGE_SHA = 'c02d5627ac4af3419474df4165fa9d320d1a990ef4c582e0232c45ddcdb3a65c'
 PACKAGE = 'com.kuanapi.app.nativepreview'
 ORIGIN = 'https://kuanapi.kuankuan.de5.net'
 PUBLIC = Path('/opt/kuanapi-ha/sub2api/data/public/downloads')
@@ -145,7 +145,7 @@ def main():
 
         old_release = verify_release(CHANNEL, PREVIOUS_VERSION, PREVIOUS_CODE)
         require(sha256(PAGE) == PREVIOUS_PAGE_SHA and old_release['manifest'] == PREVIOUS_MANIFEST_SHA,
-                'The public 2.0.0 baseline changed; review before advancing the channel')
+                f'The public {PREVIOUS_VERSION} baseline changed; review before advancing the channel')
         require(not os.path.lexists(published) and not os.path.lexists(previous), 'Release version already staged or published')
         previous.mkdir(mode=0o700)
         shutil.copyfile(PAGE, old_page)

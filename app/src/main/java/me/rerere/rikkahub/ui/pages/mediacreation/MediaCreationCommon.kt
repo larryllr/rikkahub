@@ -268,7 +268,7 @@ internal suspend fun saveMediaToGallery(
             it.substringBeforeLast('.')
         } else it
         "$stem.${file.extension}"
-    } ?: "RikkaHub_${System.currentTimeMillis()}.${file.extension}"
+    } ?: "KuanAPI_${System.currentTimeMillis()}.${file.extension}"
     val directory = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         val resolver = context.contentResolver

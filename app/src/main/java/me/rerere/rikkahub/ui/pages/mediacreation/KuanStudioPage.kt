@@ -23,8 +23,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -58,8 +56,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.kuan.KuanApi
@@ -68,8 +64,8 @@ import me.rerere.rikkahub.data.kuan.KuanJson
 import me.rerere.rikkahub.data.kuan.KuanSession
 import me.rerere.rikkahub.data.kuan.KuanStudio
 import me.rerere.rikkahub.data.kuan.STUDIO_ASSETS
-import me.rerere.rikkahub.data.kuan.STUDIO_LOCAL_ORIGIN
 import me.rerere.rikkahub.data.kuan.STUDIO_LIBRARY
+import me.rerere.rikkahub.data.kuan.STUDIO_LOCAL_ORIGIN
 import me.rerere.rikkahub.data.kuan.STUDIO_PAGE
 import me.rerere.rikkahub.data.kuan.STUDIO_SCRIPT
 import me.rerere.rikkahub.data.kuan.STUDIO_STYLE
@@ -77,7 +73,6 @@ import me.rerere.rikkahub.data.kuan.kuanUiMessage
 import me.rerere.rikkahub.data.kuan.long
 import me.rerere.rikkahub.data.kuan.obj
 import me.rerere.rikkahub.data.kuan.string
-import me.rerere.rikkahub.data.kuan.studioSourceLink
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -105,7 +100,6 @@ internal fun KuanStudioPage(
         ?: directory.groups.firstOrNull { it.platform.equals("openai", true) }
         ?: directory.groups.firstOrNull { it.id == directory.groupId }
         ?: directory.groups.firstOrNull()
-    val openMedia = { nav.navigate(Screen.MediaCreationSessions) }
     LaunchedEffect(profile?.scope) {
         if (profile != null && directory.groups.isEmpty()) catalog.refresh()
     }
@@ -117,25 +111,15 @@ internal fun KuanStudioPage(
                 navigationIcon = { BackButton() },
                 colors = CustomColors.topBarColors,
                 actions = {
-                    if (profile != null && group != null) {
+                    if (profile != null && group != null && directory.groups.size > 1) {
                         TextButton(onClick = { menu = true }) {
                             Text(group.name, modifier = Modifier.widthIn(max = 120.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                    } else {
-                        IconButton(onClick = { menu = true }) {
-                            Icon(HugeIcons.MoreVertical, contentDescription = stringResource(R.string.kuan_studio_options))
-                        }
-                    }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        if (profile != null) {
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             directory.groups.forEach { item ->
                                 DropdownMenuItem(text = { Text(item.name) }, onClick = { selected = item.id; menu = false })
                             }
                         }
-                        DropdownMenuItem(text = { Text(stringResource(R.string.media_creation_title)) }, onClick = {
-                            menu = false
-                            openMedia()
-                        })
                     }
                 },
             )
@@ -145,13 +129,11 @@ internal fun KuanStudioPage(
             when {
                 auth.loading || profile != null && group == null && directory.busy ->
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
-                profile == null -> Column(
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                profile == null -> Button(
+                    onClick = { nav.navigate(Screen.KuanAccount) },
+                    modifier = Modifier.align(Alignment.Center),
                 ) {
-                    Button(onClick = { nav.navigate(Screen.KuanAccount) }) { Text(stringResource(R.string.kuan_sign_in_action)) }
-                    TextButton(onClick = openMedia) { Text(stringResource(R.string.media_creation_title)) }
+                    Text(stringResource(R.string.kuan_sign_in_action))
                 }
                 group == null -> Column(
                     modifier = Modifier.align(Alignment.Center).padding(24.dp),
@@ -167,7 +149,6 @@ internal fun KuanStudioPage(
                         studio = studio,
                         owner = profile.scope,
                         back = { nav.popBackStack() },
-                        openMedia = openMedia,
                         reload = { revision += 1 },
                     )
                 }
@@ -182,7 +163,6 @@ internal fun StudioWebView(
     studio: KuanStudio,
     owner: String,
     back: () -> Unit,
-    openMedia: () -> Unit,
     reload: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -206,7 +186,7 @@ internal fun StudioWebView(
     val runtime = remember {
         val exports = StudioExports(context, studio, owner)
         StudioRuntime(
-            studio, scope, back, openMedia,
+            studio, scope, back,
             pick = {
                 references.issue(suspendCancellableCoroutine { target ->
                     check(picker == null) { "The system image picker is already open" }
@@ -218,10 +198,6 @@ internal fun StudioWebView(
                         target.resumeWithException(error)
                     }
                 })
-            },
-            source = { value ->
-                check(studioSourceLink(value))
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(value)))
             },
             save = { url, fallback, name ->
                 exports.download(url, fallback, name) { filename, type ->
@@ -297,9 +273,7 @@ private class StudioRuntime(
     private val studio: KuanStudio,
     private val scope: CoroutineScope,
     private val back: () -> Unit,
-    private val openMedia: () -> Unit,
     private val pick: suspend () -> JsonObject,
-    private val source: (String) -> Unit,
     private val save: suspend (String, String?, String?) -> JsonObject,
 ) {
     private val jobs = mutableMapOf<Long, Job>()
@@ -330,8 +304,6 @@ private class StudioRuntime(
                     try {
                         val result = when (action) {
                             "back" -> { back(); null }
-                            "media" -> { openMedia(); null }
-                            "source" -> { source(address(payload)); null }
                             "pick" -> pick()
                             "initialize" -> studio.initialize()
                             "profile" -> studio.profile()

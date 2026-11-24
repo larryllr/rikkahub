@@ -7,7 +7,7 @@
   <string name="about_page_version">버전</string>
   <string name="about_page_website">웹사이트</string>
   <string name="add">추가</string>
-  <string name="app_name">RikkaHub</string>
+  <string name="app_name">Kuan API</string>
   <string name="asr_button_content_description">음성 인식</string>
   <string name="asr_button_stop">중지</string>
   <string name="assistant_detail_basic_desc">이름, 아바타, 모델 및 매개변수 구성</string>
@@ -800,7 +800,7 @@
   <string name="setting_page_search_title">검색 서비스</string>
   <string name="setting_page_share">공유</string>
   <string name="setting_page_share_desc">앱을 친구들과 공유하기</string>
-  <string name="setting_page_share_text">RikkaHub - 오픈소스 Android AI 어시스턴트\n\n웹사이트: https://rikka-ai.com/</string>
+  <string name="setting_page_share_text">Kuan API - 오픈소스 Android AI 어시스턴트\n\n웹사이트: https://kuanapi.kuankuan.de5.net/downloads/android.html#native</string>
   <string name="setting_page_sponsor_alert_confirm">기부하기</string>
   <string name="setting_page_sponsor_alert_desc">앱을 100번 이상 실행하셨네요! 만족스럽게 사용하고 계시다면 개발자를 후원해 주세요.</string>
   <string name="setting_page_sponsor_alert_dismiss">나중에</string>
@@ -828,7 +828,7 @@
   <string name="setting_page_web_server_address_note_desc">LAN 주소: 기기의 WiFi IP를 사용하며, 같은 네트워크에 연결된 다른 기기에서 접근할 수 있습니다. 모바일 데이터에서는 사용할 수 없습니다.
 로컬 주소: localhost를 사용하며, 이 기기에서만 접근할 수 있습니다.
 mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네트워크의 다른 기기에서 이름으로 접근할 수 있습니다.</string>
-  <string name="setting_page_web_server_desc">웹을 통해 RikkaHub에 접근할 수 있도록 허용</string>
+  <string name="setting_page_web_server_desc">웹을 통해 Kuan API에 접근할 수 있도록 허용</string>
   <string name="setting_page_web_server_error">오류</string>
   <string name="setting_page_web_server_jwt_enable">인증 활성화</string>
   <string name="setting_page_web_server_jwt_enable_desc">웹 인터페이스에 접근할 때 비밀번호 인증이 필요합니다</string>
@@ -1218,7 +1218,7 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="setting_asr_configure_step_itn">ITN 활성화</string>
   <string name="setting_asr_configure_step_itn_desc">역 텍스트 정규화: 말로 한 숫자를 숫자로 변환합니다(예: 三百 → 300)</string>
   <string name="setting_asr_configure_step_timestamp">타임스탬프 활성화</string>
-  <string name="setting_asr_configure_step_timestamp_desc">단어 단위 타임스탬프를 반환합니다. rikkahub은 현재 이를 사용하지 않으므로 token 절약을 위해 기본적으로 꺼져 있습니다</string>
+  <string name="setting_asr_configure_step_timestamp_desc">단어 단위 타임스탬프를 반환합니다. Kuan API은 현재 이를 사용하지 않으므로 token 절약을 위해 기본적으로 꺼져 있습니다</string>
   <string name="setting_asr_configure_step_hotwords">핫워드</string>
   <string name="setting_asr_configure_step_hotwords_desc">고유명사/도메인 용어 인식 정확도를 높이기 위한 쉼표로 구분된 핫워드 목록</string>
   <string name="log_page_record_requests">요청 기록</string>
@@ -1815,7 +1815,7 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="assistant_page_local_tools_phone_use_title">휴대폰 사용</string>
   <string name="assistant_page_local_tools_phone_use_desc">AI가 화면을 읽고 이 휴대전화의 다른 앱을 조작하도록 허용</string>
   <string name="assistant_page_local_tools_phone_use_service_off">접근성 서비스가 꺼져 있습니다. 설정을 열려면 이 스위치를 껐다가 다시 켜세요. 시스템에서 해당 옵션이 회색으로 비활성화되어 있으면 먼저 앱 정보에서 이 앱의 제한된 설정을 허용하세요.</string>
-  <string name="assistant_page_local_tools_phone_use_enable_service">접근성 설정에서 \"RikkaHub Phone Use\"를 켜세요</string>
+  <string name="assistant_page_local_tools_phone_use_enable_service">접근성 설정에서 \"Kuan API Phone Use\"를 켜세요</string>
   <string name="assistant_page_local_tools_phone_use_floating_window_required">먼저 백그라운드 플로팅 창을 켜세요</string>
   <string name="phone_use_accessibility_description">Phone Use 도구를 활성화하면 AI 어시스턴트가 화면을 읽고 사용자를 대신해 탭, 스와이프, 텍스트 입력을 수행할 수 있습니다. 어시스턴트가 요청한 작업을 실행 중인 경우가 아니면 아무 작업도 수행되지 않습니다.</string>
   <string name="permission_notification_card_desc">AI 생성 및 웹 서버와 같은 백그라운드 작업의 진행 상황을 확인하려면 알림을 허용하세요</string>
@@ -1892,7 +1892,7 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="quick_start_page_ready_title">준비 완료</string>
   <string name="quick_start_page_ready_desc">이제 채팅을 시작할 수 있습니다. 아래 선택 기능은 언제든지 설정할 수 있습니다.</string>
   <string name="quick_start_page_setup_title">몇 분 만에 설정하기</string>
-  <string name="quick_start_page_setup_desc">RikkaHub는 자체 모델을 제공하지 않으므로 모델 제공업체를 연결해야 합니다. 아래의 두 가지 필수 단계를 완료하면 채팅을 시작할 수 있습니다.</string>
+  <string name="quick_start_page_setup_desc">자체 API를 사용하려면 모델 제공업체를 연결하고 기본 모델을 선택하세요.</string>
   <string name="quick_start_page_start_chat">채팅 시작하기</string>
   <string name="quick_start_page_required_steps">필수 단계</string>
   <string name="quick_start_page_provider_title">제공자 설정</string>
@@ -1910,7 +1910,7 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="quick_start_page_deepseek_get_key">API 키 받기</string>
   <string name="quick_start_page_deepseek_configure">DeepSeek 설정</string>
   <string name="quick_start_card_title">아직 사용 가능한 모델이 없습니다</string>
-  <string name="quick_start_card_desc">RikkaHub에서 채팅하려면 모델 제공자가 필요합니다. 빠른 시작에 따라 제공자와 기본 모델을 설정하거나 DeepSeek에서 채팅 기록을 마이그레이션하세요.</string>
+  <string name="quick_start_card_desc">Kuan API에서 채팅하려면 모델 제공자가 필요합니다. 빠른 시작에 따라 제공자와 기본 모델을 설정하거나 DeepSeek에서 채팅 기록을 마이그레이션하세요.</string>
   <string name="setting_page_quick_start">빠른 시작</string>
   <string name="setting_page_quick_start_desc">제공자와 모델을 단계별로 설정하거나 DeepSeek에서 마이그레이션하세요</string>
   <string name="quick_start_page_model_locked">이전 단계를 완료하고 모델을 추가하면 여기에서 사용할 수 있습니다.</string>
@@ -1924,12 +1924,12 @@ mDNS 주소: .local 호스트네임을 사용하며, IP를 몰라도 같은 네�
   <string name="quick_start_page_not_selected">선택되지 않음</string>
   <string name="quick_start_page_unnamed">이름 없음</string>
   <string name="quick_start_page_deepseek_title">DeepSeek에서 이동하기</string>
-  <string name="quick_start_page_deepseek_desc">DeepSeek 웹사이트 또는 앱에서 채팅 기록을 RikkaHub로 가져온 다음 DeepSeek API를 연결해 계속 채팅하세요.</string>
+  <string name="quick_start_page_deepseek_desc">DeepSeek 웹사이트 또는 앱에서 채팅 기록을 Kuan API로 가져온 다음 DeepSeek API를 연결해 계속 채팅하세요.</string>
   <string name="quick_start_page_deepseek_migrate_chats">채팅 기록 이전</string>
   <string name="quick_start_page_deepseek_export_title">DeepSeek에서 데이터 내보내기</string>
   <string name="quick_start_page_deepseek_export_desc">브라우저에서 DeepSeek 웹사이트를 열고 로그인한 뒤 설정 → 데이터 관리로 이동하여 모든 채팅 내보내기를 선택하고 다운로드한 ZIP 파일을 저장하세요. 압축을 풀 필요는 없습니다.</string>
   <string name="quick_start_page_deepseek_open_web">DeepSeek 웹사이트 열기</string>
-  <string name="quick_start_page_deepseek_import_title">RikkaHub로 가져오기</string>
+  <string name="quick_start_page_deepseek_import_title">Kuan API로 가져오기</string>
   <string name="quick_start_page_deepseek_import_desc">이전 단계의 ZIP을 선택하세요. 각 채팅에 대해 현재 표시된 브랜치가 추론 및 첨부 파일을 포함하여 현재 어시스턴트 \"%1$s\"로 가져와집니다. 이미 가져온 채팅은 건너뛰므로 다시 가져와도 안전합니다.</string>
   <string name="quick_start_page_deepseek_importing">가져오는 중…</string>
   <string name="quick_start_page_deepseek_import_another">다른 ZIP 가져오기</string>

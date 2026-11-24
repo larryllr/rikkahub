@@ -41,7 +41,6 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -65,7 +64,6 @@ import me.rerere.rikkahub.data.db.DatabaseMigrationTracker
 import me.rerere.rikkahub.data.db.MigrationState
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
-import me.rerere.rikkahub.data.repository.MediaCreationRepository
 import me.rerere.rikkahub.service.MediaCreationForegroundService
 import me.rerere.rikkahub.ui.activity.SafeModeActivity
 import me.rerere.rikkahub.ui.components.ui.TTSController
@@ -106,10 +104,7 @@ import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalPage
 import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.rikkahub.ui.pages.favorite.FavoritePage
 import me.rerere.rikkahub.ui.pages.history.HistoryPage
-import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.log.LogPage
-import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationPage
-import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationSessionsPage
 import me.rerere.rikkahub.ui.pages.search.SearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesPage
@@ -119,7 +114,6 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesGeneralPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesNetworkPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesUIPage
 import me.rerere.rikkahub.ui.pages.setting.SettingThemePage
-import me.rerere.rikkahub.ui.pages.setting.SettingDonatePage
 import me.rerere.rikkahub.ui.pages.setting.SettingFilesPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
@@ -129,8 +123,6 @@ import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSearchDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
-import me.rerere.rikkahub.ui.pages.setting.SettingMediaPage
-import me.rerere.rikkahub.ui.pages.setting.SettingMediaProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSpeechPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.quickstart.QuickStartPage
@@ -162,7 +154,6 @@ fun conversationIntent(context: Context, conversationId: String): Intent =
 class RouteActivity : ComponentActivity() {
     private val okHttpClient by inject<OkHttpClient>()
     private val settingsStore by inject<SettingsStore>()
-    private val mediaCreationRepository by inject<MediaCreationRepository>()
     private var navStack: MutableList<NavKey>? = null
     private val pendingIntents = ArrayDeque<Intent>()
 
@@ -240,10 +231,7 @@ class RouteActivity : ComponentActivity() {
         }
         val destination = when (intent.action) {
             ACTION_TRANSLATE -> Screen.Translator
-            ACTION_MEDIA_CREATION -> {
-                openNewMediaCreation(backStack)
-                null
-            }
+            ACTION_MEDIA_CREATION -> Screen.ImageGen
             Intent.ACTION_SEND -> Screen.ShareHandler(
                 text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty(),
                 streamUri = intent.getStringExtra(Intent.EXTRA_STREAM),
@@ -251,26 +239,12 @@ class RouteActivity : ComponentActivity() {
             Intent.ACTION_PROCESS_TEXT -> Screen.ShareHandler(
                 text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty(),
             )
-            else -> mediaCreationDestination(intent)
-                ?: intent.getStringExtra(EXTRA_CONVERSATION_ID)?.let { Screen.Chat(it) }
+            else -> intent.getStringExtra(EXTRA_CONVERSATION_ID)?.let { Screen.Chat(it) }
+                ?: if (intent.hasExtra(MediaCreationForegroundService.EXTRA_MEDIA_SESSION_ID)) Screen.ImageGen else null
         }
         if (destination != null && backStack.lastOrNull() != destination) {
             backStack.add(destination)
         }
-    }
-
-    // 快捷方式没有指定会话，打开一个空会话
-    private fun openNewMediaCreation(backStack: MutableList<NavKey>) {
-        lifecycleScope.launch {
-            val destination = Screen.MediaCreation(mediaCreationRepository.newSession().id.toString())
-            if (backStack.lastOrNull() != destination) backStack.add(destination)
-        }
-    }
-
-    // 媒体创作的通知带着会话 ID，点击后直接打开那个会话
-    private fun mediaCreationDestination(intent: Intent): Screen? {
-        val sessionId = intent.getStringExtra(MediaCreationForegroundService.EXTRA_MEDIA_SESSION_ID) ?: return null
-        return runCatching { Uuid.parse(sessionId) }.getOrNull()?.let { Screen.MediaCreation(it.toString()) }
     }
 
     @OptIn(ExperimentalComposeUiApi::class)
@@ -439,24 +413,20 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.ImageGen> {
-                                ImageGenPage()
+                                KuanStudioPage()
                             }
 
+                            // Keep destinations from Android's restored back stack readable after an update.
                             entry<Screen.MediaCreationSessions> {
-                                MediaCreationSessionsPage()
+                                KuanStudioPage()
                             }
 
                             entry<Screen.KuanStudio> {
                                 KuanStudioPage()
                             }
 
-                            // 从会话列表展开（容器变换），页面本身只做淡入淡出，避免和平移打架
-                            entry<Screen.MediaCreation>(
-                                metadata = NavDisplay.transitionSpec { fadeIn() togetherWith fadeOut() }
-                                    + NavDisplay.popTransitionSpec { fadeIn() togetherWith fadeOut() }
-                                    + NavDisplay.predictivePopTransitionSpec { fadeIn() togetherWith fadeOut() }
-                            ) { key ->
-                                MediaCreationPage(key.id)
+                            entry<Screen.MediaCreation> {
+                                KuanStudioPage()
                             }
 
                             entry<Screen.WebView> { key ->
@@ -522,11 +492,11 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.SettingMedia> {
-                                SettingMediaPage()
+                                KuanStudioPage()
                             }
 
-                            entry<Screen.SettingMediaProviderDetail> { key ->
-                                SettingMediaProviderDetailPage(id = Uuid.parse(key.providerId))
+                            entry<Screen.SettingMediaProviderDetail> {
+                                KuanStudioPage()
                             }
 
                             entry<Screen.SettingMcp> {
@@ -538,7 +508,7 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.SettingDonate> {
-                                SettingDonatePage()
+                                SettingAboutPage()
                             }
 
                             entry<Screen.QuickStart> {

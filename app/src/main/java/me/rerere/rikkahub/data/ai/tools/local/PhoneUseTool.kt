@@ -185,13 +185,13 @@ private class PhoneUseSession(
 
     private suspend fun awaitController(): PhoneController {
         check(isCheckedInSystem()) {
-            "Phone Use is not enabled. Ask the user to turn on \"RikkaHub Phone Use\" in the system accessibility settings."
+            "Phone Use is not enabled. Ask the user to turn on \"Kuan API Phone Use\" in the system accessibility settings."
         }
         return withTimeoutOrNull(SERVICE_CONNECT_WAIT_MS) { manager.controller.filterNotNull().first() } ?: error(
-            "\"RikkaHub Phone Use\" is on in the system accessibility settings, but the system has stopped the service " +
+            "\"Kuan API Phone Use\" is on in the system accessibility settings, but the system has stopped the service " +
                 "(some phones do this when the app is swiped away from recent apps) and will not restart it by itself. " +
                 "Ask the user to turn it off and on again in the accessibility settings. To keep it from happening again, " +
-                "they can lock RikkaHub in recent apps and allow it to auto-start."
+                "they can lock Kuan API in recent apps and allow it to auto-start."
         )
     }
 

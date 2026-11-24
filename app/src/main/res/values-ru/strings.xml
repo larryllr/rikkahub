@@ -7,7 +7,7 @@
   <string name="about_page_version">Версия</string>
   <string name="about_page_website">Веб-сайт</string>
   <string name="add">Добавить</string>
-  <string name="app_name">RikkaHub</string>
+  <string name="app_name">Kuan API</string>
   <string name="asr_button_content_description">Распознавание речи</string>
   <string name="asr_button_stop">Стоп</string>
   <string name="assistant_detail_basic_desc">Настройте имя, аватар, модель и параметры</string>
@@ -800,7 +800,7 @@
   <string name="setting_page_search_title">Служба поиска</string>
   <string name="setting_page_share">Поделиться</string>
   <string name="setting_page_share_desc">Поделиться этим приложением с друзьями</string>
-  <string name="setting_page_share_text">RikkaHub — открытый Android-ассистент с ИИ\n\nСайт: https://rikka-ai.com/</string>
+  <string name="setting_page_share_text">Kuan API — открытый Android-ассистент с ИИ\n\nСайт: https://kuanapi.kuankuan.de5.net/downloads/android.html#native</string>
   <string name="setting_page_sponsor_alert_confirm">Пожертвовать</string>
   <string name="setting_page_sponsor_alert_desc">Вы запустили приложение более 100 раз! Если вам нравится им пользоваться, пожалуйста, поддержите разработчика.</string>
   <string name="setting_page_sponsor_alert_dismiss">Не сейчас</string>
@@ -828,7 +828,7 @@
   <string name="setting_page_web_server_address_note_desc">LAN-адрес: использует IP-адрес устройства в Wi-Fi, доступен другим устройствам в той же сети. Недоступен при использовании мобильных данных.
 Локальный адрес: использует localhost, доступен только на этом устройстве.
 Адрес mDNS: использует имя хоста .local, доступен по имени с других устройств в той же сети без знания IP-адреса.</string>
-  <string name="setting_page_web_server_desc">Разрешить доступ к RikkaHub через веб</string>
+  <string name="setting_page_web_server_desc">Разрешить доступ к Kuan API через веб</string>
   <string name="setting_page_web_server_error">Ошибка</string>
   <string name="setting_page_web_server_jwt_enable">Включить аутентификацию</string>
   <string name="setting_page_web_server_jwt_enable_desc">Требовать проверку пароля при доступе к веб-интерфейсу</string>
@@ -1218,7 +1218,7 @@
   <string name="setting_asr_configure_step_itn">Включить ITN</string>
   <string name="setting_asr_configure_step_itn_desc">Обратная нормализация текста: преобразует произнесённые числа в цифры (например, 三百 → 300)</string>
   <string name="setting_asr_configure_step_timestamp">Включить временные метки</string>
-  <string name="setting_asr_configure_step_timestamp_desc">Возвращать временные метки на уровне слов. Сейчас rikkahub их не использует, поэтому по умолчанию отключено для экономии token</string>
+  <string name="setting_asr_configure_step_timestamp_desc">Возвращать временные метки на уровне слов. Сейчас Kuan API их не использует, поэтому по умолчанию отключено для экономии token</string>
   <string name="setting_asr_configure_step_hotwords">Горячие слова</string>
   <string name="setting_asr_configure_step_hotwords_desc">Список горячих слов через запятую для повышения точности распознавания имён собственных и терминов предметной области</string>
   <string name="log_page_record_requests">Записывать запросы</string>
@@ -1815,7 +1815,7 @@
   <string name="assistant_page_local_tools_phone_use_title">Использование телефона</string>
   <string name="assistant_page_local_tools_phone_use_desc">Разрешить ИИ читать экран и управлять другими приложениями на этом телефоне</string>
   <string name="assistant_page_local_tools_phone_use_service_off">Служба доступности выключена. Выключите и снова включите этот переключатель, чтобы открыть настройки. Если система сделает этот пункт серым, сначала разрешите ограниченные настройки для этого приложения в разделе «Информация о приложении».</string>
-  <string name="assistant_page_local_tools_phone_use_enable_service">Включите \"RikkaHub Phone Use\" в настройках специальных возможностей</string>
+  <string name="assistant_page_local_tools_phone_use_enable_service">Включите \"Kuan API Phone Use\" в настройках специальных возможностей</string>
   <string name="assistant_page_local_tools_phone_use_floating_window_required">Сначала включите фоновое плавающее окно</string>
   <string name="phone_use_accessibility_description">Позволяет ИИ-ассистенту читать экран и выполнять за вас нажатия, свайпы и ввод текста, когда вы включаете инструмент Phone Use. Ничего не выполняется, если ассистент не выполняет задачу, которую вы запросили.</string>
   <string name="permission_notification_card_desc">Разрешите уведомления, чтобы отслеживать выполнение фоновых задач, таких как генерация ИИ и работа веб-сервера</string>
@@ -1892,7 +1892,7 @@
   <string name="quick_start_page_ready_title">Всё готово</string>
   <string name="quick_start_page_ready_desc">Теперь можно начать общение. Необязательные функции ниже можно настроить в любое время.</string>
   <string name="quick_start_page_setup_title">Настройка за несколько минут</string>
-  <string name="quick_start_page_setup_desc">RikkaHub сам не предоставляет модели, поэтому нужно подключить провайдера моделей. Выполните два обязательных шага ниже, чтобы начать общение.</string>
+  <string name="quick_start_page_setup_desc">Чтобы использовать свой API, подключите провайдера и выберите модель по умолчанию.</string>
   <string name="quick_start_page_model_locked">Доступно здесь после завершения предыдущего шага и добавления моделей.</string>
   <string name="quick_start_page_optional_features">Дополнительные функции</string>
   <string name="quick_start_page_search_title">Веб-поиск</string>
@@ -1920,16 +1920,16 @@
   <string name="quick_start_page_deepseek_get_key">Получить API-ключ</string>
   <string name="quick_start_page_deepseek_configure">Настроить DeepSeek</string>
   <string name="quick_start_card_title">Модели пока недоступны</string>
-  <string name="quick_start_card_desc">Для чата RikkaHub нужен провайдер моделей. Следуйте инструкции быстрого старта, чтобы настроить провайдера и модель по умолчанию, или перенесите историю чатов из DeepSeek.</string>
+  <string name="quick_start_card_desc">Для чата Kuan API нужен провайдер моделей. Следуйте инструкции быстрого старта, чтобы настроить провайдера и модель по умолчанию, или перенесите историю чатов из DeepSeek.</string>
   <string name="setting_page_quick_start">Быстрый старт</string>
   <string name="setting_page_quick_start_desc">Пошаговая настройка провайдеров и моделей или перенос из DeepSeek</string>
   <string name="quick_start_page_deepseek_title">Переход с DeepSeek</string>
-  <string name="quick_start_page_deepseek_desc">Импортируйте историю чатов с сайта или из приложения DeepSeek в RikkaHub, затем подключите API DeepSeek, чтобы продолжить общение.</string>
+  <string name="quick_start_page_deepseek_desc">Импортируйте историю чатов с сайта или из приложения DeepSeek в Kuan API, затем подключите API DeepSeek, чтобы продолжить общение.</string>
   <string name="quick_start_page_deepseek_migrate_chats">Перенести историю чатов</string>
   <string name="quick_start_page_deepseek_export_title">Экспорт данных из DeepSeek</string>
   <string name="quick_start_page_deepseek_export_desc">Откройте сайт DeepSeek в браузере и войдите, перейдите в Настройки → Управление данными, выберите экспорт всех чатов и сохраните скачанный ZIP-файл. Распаковывать его не нужно.</string>
   <string name="quick_start_page_deepseek_open_web">Открыть сайт DeepSeek</string>
-  <string name="quick_start_page_deepseek_import_title">Импорт в RikkaHub</string>
+  <string name="quick_start_page_deepseek_import_title">Импорт в Kuan API</string>
   <string name="quick_start_page_deepseek_import_desc">Выберите ZIP-файл из предыдущего шага. Для каждого чата в текущего ассистента \"%1$s\" импортируется отображаемая сейчас ветка, включая рассуждения и вложения. Уже импортированные чаты пропускаются, поэтому повторный импорт безопасен.</string>
   <string name="quick_start_page_deepseek_importing">Импорт…</string>
   <string name="quick_start_page_deepseek_import_another">Импортировать другой ZIP</string>

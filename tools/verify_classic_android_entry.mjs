@@ -24,7 +24,7 @@ createServer((req, res) => {
     '/updates.js': ['application/javascript; charset=UTF-8', updateScript],
     '/downloads/mobile-latest.json': ['application/json', manifest],
     '/downloads/android.html': ['text/html; charset=UTF-8', shelf],
-    '/downloads/mobile-native/2.0.1/logo.png': ['image/png', logo],
+    '/downloads/mobile-native/2.0.2/logo.png': ['image/png', logo],
   }[path];
   if (!result) { res.writeHead(404).end(); return; }
   res.writeHead(200, { 'Content-Type': result[0], 'Cache-Control': 'no-store' }).end(result[1]);

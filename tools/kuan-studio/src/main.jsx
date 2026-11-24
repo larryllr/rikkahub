@@ -16,13 +16,13 @@ import './studio.css';
 gsap.registerPlugin(useGSAP);
 const DEFAULTS = {prompt:'',model:'',autoModel:true,size:'1024x1024',quality:'auto',outputFormat:'png',outputCompression:90,count:1};
 const strings = {
-  zh:{title:'图像工作台',brand:'宽api',back:'返回对话',gallery:'案例库',templates:'工业模板',history:'生成记录',guide:'风格指南',
+  zh:{title:'图像工作台',brand:'宽 API',back:'返回对话',gallery:'案例库',templates:'工业模板',history:'生成记录',guide:'风格指南',
     prompt:'提示词',promptPlaceholder:'描述你想创作的画面，或从右侧选择一个案例…',generate:'生成图像',model:'生图模型',auto:'自动 · 最新可用',
     size:'画幅',custom:'自定义',quality:'画质',format:'格式',count:'数量',refs:'参考图片',search:'搜索案例、画面、提示词…',
     all:'全部',category:'分类',style:'风格',scene:'场景',favorites:'收藏',use:'使用提示词',copy:'复制',copied:'已复制',
-    connection:'连接设置',api:'API Key',base:'Base URL',connected:'已绑定当前账号',refresh:'刷新连接和模型',source:'原始出处',
+    connection:'连接设置',api:'API Key',base:'Base URL',connected:'已绑定当前账号',refresh:'刷新连接和模型',
     examples:'关联案例',constraints:'核心约束',pitfalls:'避坑指南',variants:'模板版本',variables:'填入变量',close:'关闭',
-    old:'旧版工作台',empty:'没有匹配的内容',noHistory:'还没有生成记录',newest:'最新收录',featured:'精选优先',
+    empty:'没有匹配的内容',noHistory:'还没有生成记录',newest:'最新收录',featured:'精选优先',
     results:'个结果',stop:'停止',download:'下载原图',reference:'作为参考图',retry:'再次生成',failed:'生成失败',cancelled:'已停止',
     running:'正在生成',completed:'已完成',delete:'删除',confirm:'确认删除',network:'暂时无法连接',retryLoad:'重新连接',
     settings:'生成参数',guideDownload:'下载完整模板',credits:'内容来源',read:'查看详情',more:'加载更多',clear:'清空筛选',
@@ -33,9 +33,9 @@ const strings = {
     prompt:'Prompt',promptPlaceholder:'Describe your image, or choose a case from the gallery…',generate:'Generate image',model:'Image model',auto:'Auto · latest available',
     size:'Aspect ratio',custom:'Custom',quality:'Quality',format:'Format',count:'Images',refs:'Reference images',search:'Search cases, styles, prompts…',
     all:'All',category:'Category',style:'Style',scene:'Scene',favorites:'Favorites',use:'Use prompt',copy:'Copy',copied:'Copied',
-    connection:'Connection',api:'API key',base:'Base URL',connected:'Current account connected',refresh:'Refresh connection & models',source:'Original source',
+    connection:'Connection',api:'API key',base:'Base URL',connected:'Current account connected',refresh:'Refresh connection & models',
     examples:'Related cases',constraints:'Core constraints',pitfalls:'Pitfalls',variants:'Template versions',variables:'Fill variables',close:'Close',
-    old:'Previous studio',empty:'No matching items',noHistory:'No images yet',newest:'Newest',featured:'Featured first',
+    empty:'No matching items',noHistory:'No images yet',newest:'Newest',featured:'Featured first',
     results:'results',stop:'Stop',download:'Download original',reference:'Use as reference',retry:'Generate again',failed:'Failed',cancelled:'Stopped',
     running:'Generating',completed:'Completed',delete:'Delete',confirm:'Confirm delete',network:'Unable to connect',retryLoad:'Reconnect',
     settings:'Generation settings',guideDownload:'Download full templates',credits:'Attribution',read:'View details',more:'Load more',clear:'Clear filters',
@@ -211,7 +211,6 @@ function App({bridge,assetBase,native}) {
       <label>{t.base}<input readOnly value={connection?.baseUrl||''}/></label>
       {!native&&<label>{t.api}<span className="kw-secret"><input readOnly type={showKey?'text':'password'} value={connection?.apiKey||''}/><IconButton icon={showKey?EyeOff:Eye} label={showKey?'Hide API key':'Show API key'} onClick={()=>setShowKey(!showKey)}/></span></label>}
       <button type="button" className="kw-secondary" onClick={()=>refresh()} disabled={connecting}><RotateCcw size={16} className={connecting?'spinning':''}/>{t.refresh}</button>
-      {!native&&<button type="button" className="kw-link" onClick={()=>bridge.legacy()}>{t.old}<ArrowUpRight size={14}/></button>}
     </section>}
     {error&&<div className="kw-error" role="alert"><span>{error}</span><button type="button" onClick={()=>refresh()}>{t.retryLoad}</button></div>}
     <div className="kw-layout">
@@ -276,8 +275,10 @@ function App({bridge,assetBase,native}) {
           </article>)}</div>}
         {view==='compare'&&comparisons&&<Comparison data={comparisons} assetBase={assetBase} language={language} usePrompt={choosePrompt} download={download} onNotice={setNotice}/>}
         {view==='guide'&&<div className="kw-guide"><div className="kw-guide-actions"><button type="button" className="kw-secondary" onClick={()=>download(assetBase+'templates.md','templates.md')} disabled={downloads[assetBase+'templates.md']==='pending'}><Download size={16}/>{downloads[assetBase+'templates.md']==='ready'?t.openFile:t.guideDownload}</button><button type="button" className="kw-secondary" onClick={()=>download(assetBase+'style-library.zip','style-library.zip')} disabled={downloads[assetBase+'style-library.zip']==='pending'}><BookOpen size={16}/>{downloads[assetBase+'style-library.zip']==='ready'?t.openFile:t.archive}</button></div>
-          <div className="kw-markdown" dangerouslySetInnerHTML={{__html:DOMPurify.sanitize(marked.parse(guide),{FORBID_TAGS:['img','script','iframe','form'],FORBID_ATTR:['style']})}}/>
-          <section className="kw-attribution"><h3>{t.credits}</h3><p>{t.notice}</p><a href="https://github.com/freestylefly/awesome-gpt-image-2" target="_blank" rel="noreferrer">freestylefly / awesome-gpt-image-2 <ArrowUpRight size={15}/></a><a href={assetBase+'LICENSE.txt'} target="_blank" rel="noreferrer">MIT License</a></section></div>}
+          <div className="kw-markdown" dangerouslySetInnerHTML={{__html:DOMPurify.sanitize(marked.parse(guide),{FORBID_TAGS:['img','script','iframe','form','a'],FORBID_ATTR:['style']})}}/>
+          <section className="kw-attribution"><h3>{t.credits}</h3><p>{t.notice}</p>
+            <button type="button" className="kw-link" onClick={()=>download(assetBase+'LICENSE.txt','LICENSE.txt')}>MIT License</button>
+          </section></div>}
         {view!=='guide'&&<footer className="kw-source-footer"><span>awesome-gpt-image-2</span><button type="button" onClick={()=>setView('guide')}>{t.credits}<ArrowUpRight size={12}/></button></footer>}
       </main>
       {selected&&<aside className="kw-inspector" aria-label={t.read}>
@@ -291,8 +292,7 @@ function App({bridge,assetBase,native}) {
           {selected.guidance&&<section><h3>{t.constraints}</h3><ul>{(selected.guidance[language]||selected.guidance.en||[]).map(line=><li key={line}>{line}</li>)}</ul></section>}
           {selected.pitfalls&&<section><h3>{t.pitfalls}</h3><ul>{(selected.pitfalls[language]||selected.pitfalls.en||[]).map(line=><li key={line}>{line}</li>)}</ul></section>}
           {selected.exampleCases&&<section><h3>{t.examples}</h3><div className="kw-related">{selected.exampleCases.map(id=>data.cases.find(row=>row.id===id)).filter(Boolean).map(item=><button type="button" key={item.id} title={item.title} onClick={()=>selectItem(item)}><Thumb item={item} assetBase={assetBase} sourceRevision={data?.sourceRevision}/></button>)}</div></section>}
-          {selected.sourceUrl&&<a className="kw-source-link" href={selected.sourceUrl} target="_blank" rel="noreferrer">{selected.sourceLabel}<ArrowUpRight size={15}/></a>}
-          {selected.githubUrl&&<a className="kw-source-link" href={selected.githubUrl} target="_blank" rel="noreferrer">{t.source}<ArrowUpRight size={15}/></a>}
+          {selected.sourceLabel&&<small>{selected.sourceLabel}</small>}
         </div><footer><button type="button" className="kw-generate" disabled={!effectivePrompt} onClick={()=>choosePrompt(effectivePrompt,selected)}><Plus size={17}/>{t.use}</button></footer>
       </aside>}
     </div>
@@ -305,7 +305,7 @@ function App({bridge,assetBase,native}) {
 class StudioBoundary extends Component {
   state={failed:false};
   static getDerivedStateFromError(){return{failed:true};}
-  render(){return this.state.failed?<div className="kw-start-error"><h2>专业生图暂时无法打开</h2><button onClick={()=>this.props.bridge.legacy()}>打开旧版工作台</button><button onClick={()=>this.props.bridge.back()}>返回对话</button></div>:this.props.children;}
+  render(){return this.state.failed?<div className="kw-start-error"><h2>专业生图暂时无法打开</h2><button onClick={()=>this.props.bridge.back()}>返回对话</button></div>:this.props.children;}
 }
 export function mountStudio(element,bridge,{assetBase,native=false}) {
   const root=createRoot(element);

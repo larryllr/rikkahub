@@ -1,8 +1,8 @@
 {
   "conversations": {
     "meta": {
-      "title": "RikkaHub Web",
-      "description": "RikkaHub web client"
+      "title": "Kuan API Web",
+      "description": "Kuan API web client"
     },
     "preview": {
       "empty_message": "Empty message",

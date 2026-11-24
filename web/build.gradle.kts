@@ -30,6 +30,7 @@ val buildWebUi = tasks.register<Exec>("buildWebUi") {
     )
     inputs.dir(webUiDir.dir("app"))
     inputs.dir(webUiDir.dir("public"))
+    inputs.file(rootProject.layout.projectDirectory.file("app/src/main/res/drawable-nodpi/kuan_logo.png"))
     outputs.dir(webStaticResourcesDir)
 }
 

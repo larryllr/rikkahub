@@ -45,7 +45,6 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Code
 import me.rerere.hugeicons.stroke.Earth
 import me.rerere.hugeicons.stroke.File02
-import me.rerere.hugeicons.stroke.Github
 import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
@@ -216,15 +215,9 @@ fun SettingAboutPage() {
                             headlineContent = { Text(stringResource(R.string.kuan_source_code)) },
                         )
                         item(
-                            onClick = { context.openUrl("https://github.com/rikkahub/rikkahub") },
-                            leadingContent = { CardGroupIcon(HugeIcons.Github, containerColor = containerColor, contentColor = contentColor) },
-                            supportingContent = { Text("https://github.com/rikkahub/rikkahub") },
-                            headlineContent = { Text("RikkaHub") },
-                        )
-                        item(
-                            onClick = { context.openUrl("https://github.com/rikkahub/rikkahub/blob/master/LICENSE") },
+                            onClick = { context.openUrl("https://www.gnu.org/licenses/agpl-3.0.html") },
                             leadingContent = { CardGroupIcon(HugeIcons.File02, containerColor = containerColor, contentColor = contentColor) },
-                            supportingContent = { Text("https://github.com/rikkahub/rikkahub/blob/master/LICENSE") },
+                            supportingContent = { Text("AGPL-3.0") },
                             headlineContent = { Text(stringResource(R.string.about_page_license)) },
                         )
                     }

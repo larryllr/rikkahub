@@ -85,7 +85,7 @@ class KuanStudioTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val exported = mutableListOf<android.net.Uri>()
         try {
-            compose.setContent { StudioWebView(studio, profile.scope, {}, {}, {}) }
+            compose.setContent { StudioWebView(studio, profile.scope, {}, {}) }
             eventually("bundled case data and pinned fallback image") {
                 js("Boolean(document.querySelector('.kw-card-image img')?.naturalWidth)") == "true"
             }
@@ -95,6 +95,11 @@ class KuanStudioTest {
             }
             assertEquals("false", js("Boolean(document.querySelector('option[value=fixture-admin]'))"))
             assertEquals("false", js("Boolean(document.querySelector('input[type=password]'))"))
+            js("document.querySelector('.kw-card-image').click()")
+            eventually("case details show without GitHub links") {
+                js("Boolean(document.querySelector('.kw-inspector') && !document.querySelector('.kw-inspector a[href]'))") == "true"
+            }
+            js("document.querySelector('.kw-inspector header button').click()")
 
             js("document.querySelector('.kw-mobile-composer').click()")
             prompt("First test image")
@@ -150,6 +155,10 @@ class KuanStudioTest {
             }
             assertFalse(js("document.body.textContent.includes('studio-fixture-key')") == "true")
 
+            js("document.querySelector('.kw-header nav button:nth-child(3)').click()")
+            eventually("comparison gallery rendered without outbound links") {
+                js("Boolean(document.querySelector('.kw-comparison select') && !document.querySelector('.kw-comparison a[href]'))") == "true"
+            }
             js("document.querySelector('.kw-header nav button:last-child').click()")
             val target = File(slot, "style-library.zip").apply { createNewFile() }
             val targetUri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", target)
@@ -157,7 +166,8 @@ class KuanStudioTest {
                 Instrumentation.ActivityResult(Activity.RESULT_OK,
                     Intent().setData(targetUri).addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)), true)
             try {
-                eventually("packaged style guide appeared") { js("Boolean(document.querySelector('.kw-guide-actions button'))") == "true" }
+                eventually("packaged style guide appeared") { js("Boolean(document.querySelector('.kw-guide .kw-markdown h2'))") == "true" }
+                assertEquals("0", js("document.querySelectorAll('.kw-guide a[href]').length"))
                 js("document.querySelector('.kw-guide-actions button:nth-child(2)').click()")
                 eventually("ZIP saved through system document creation") { target.length() > 2000000L }
                 assertEquals(1, writer.hits)

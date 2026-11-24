@@ -26,8 +26,8 @@
         android:shortcutId="media_creation"
         android:enabled="true"
         android:icon="@drawable/ic_media_creation"
-        android:shortcutShortLabel="@string/shortcut_media_creation"
-        android:shortcutLongLabel="@string/shortcut_media_creation">
+        android:shortcutShortLabel="@string/kuan_studio_title"
+        android:shortcutLongLabel="@string/kuan_studio_title">
         <intent
             android:action="me.rerere.rikkahub.action.MEDIA_CREATION"
             android:targetClass="me.rerere.rikkahub.RouteActivity" />

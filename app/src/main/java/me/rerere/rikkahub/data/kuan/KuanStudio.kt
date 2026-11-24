@@ -253,13 +253,6 @@ internal fun studioPublicImage(value: String): HttpUrl? {
     }
 }
 
-internal fun studioSourceLink(value: String): Boolean {
-    val url = value.toHttpUrlOrNull() ?: return false
-    val path = url.encodedPath
-    return secureStudioUrl(url) && url.host == "github.com" && url.query == null &&
-        (path == "/$STUDIO_SOURCE" || path.startsWith("/$STUDIO_SOURCE/blob/") || path.startsWith("/$STUDIO_SOURCE/tree/"))
-}
-
 private fun validatedImageType(response: Response): String? {
     if (!response.isSuccessful || response.body.contentLength() > MAX_IMAGE_FILE) return null
     val type = response.body.contentType()?.toString()?.substringBefore(';')

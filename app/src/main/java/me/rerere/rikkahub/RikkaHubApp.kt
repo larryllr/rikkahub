@@ -38,7 +38,6 @@ import me.rerere.rikkahub.di.appModule
 import me.rerere.rikkahub.di.dataSourceModule
 import me.rerere.rikkahub.di.repositoryModule
 import me.rerere.rikkahub.di.viewModelModule
-import me.rerere.rikkahub.service.MediaCreationService
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.DatabaseUtil
@@ -112,24 +111,12 @@ class RikkaHubApp : Application() {
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
 
-        // Resume media generations interrupted by the last process death
-        resumeMediaCreations()
         resumeMemoryConsolidation()
 
         // Increment launch count
         incrementLaunchCount()
 
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
-    }
-
-    private fun resumeMediaCreations() {
-        get<AppScope>().launch(Dispatchers.IO) {
-            runCatching {
-                get<MediaCreationService>().resumePending()
-            }.onFailure {
-                Log.e(TAG, "resumeMediaCreations failed", it)
-            }
-        }
     }
 
     private fun resumeMemoryConsolidation() {
@@ -288,12 +275,6 @@ class RikkaHubApp : Application() {
             .setShowBadge(false)
             .build()
         notificationManager.createNotificationChannel(webServerChannel)
-
-        val mediaCreationChannel = NotificationChannelCompat
-            .Builder(MEDIA_CREATION_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_DEFAULT)
-            .setName(getString(R.string.media_creation_title))
-            .build()
-        notificationManager.createNotificationChannel(mediaCreationChannel)
 
         val memoryDreamChannel = NotificationChannelCompat
             .Builder(MEMORY_DREAM_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)

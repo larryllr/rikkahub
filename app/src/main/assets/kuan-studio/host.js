@@ -84,20 +84,8 @@ async function start() {
       }));
     },
     back: () => void call("back"),
-    legacy: () => void call("media"),
     download: (url, name, { fallbackUrl } = {}) => call("download", {
       url: new URL(url, pageOrigin).href, name, fallback: fallbackUrl || undefined,
     }),
   }, { assetBase: assets, native: true });
 }
-
-root.addEventListener("click", event => {
-  const link = event.target.closest("a[href]");
-  if (!link) return;
-  event.preventDefault();
-  const uri = new URL(link.href, pageOrigin);
-  const operation = uri.origin === pageOrigin && uri.pathname === assets + "LICENSE.txt"
-    ? call("download", { url: uri.href, name: "LICENSE.txt" })
-    : call("source", { url: uri.href });
-  operation.catch(() => {});
-});

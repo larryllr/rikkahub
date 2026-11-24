@@ -414,7 +414,7 @@ fun ChatDrawerContent(
                         onDismissRequest = { showMenuPopup = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chat_page_menu_image_generation)) },
+                            text = { Text(stringResource(R.string.kuan_studio_title)) },
                             leadingIcon = { Icon(HugeIcons.Image02, null) },
                             onClick = {
                                 showMenuPopup = false
@@ -746,12 +746,6 @@ private fun DrawerActions(navController: Navigator) {
             trailingIcon = HugeIcons.Search01,
             trailingDescription = stringResource(R.string.chat_page_search_chats),
             onTrailingClick = { navController.navigate(Screen.MessageSearch) },
-        )
-
-        DrawerEntry(
-            icon = HugeIcons.Image02,
-            text = stringResource(R.string.kuan_studio_title),
-            onClick = { navController.navigate(Screen.KuanStudio) },
         )
 
         // 翻译入口

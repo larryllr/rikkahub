@@ -7,7 +7,7 @@
   <string name="about_page_version">Version</string>
   <string name="about_page_website">Website</string>
   <string name="add">Add</string>
-  <string name="app_name">RikkaHub</string>
+  <string name="app_name">Kuan API</string>
   <string name="asr_button_content_description">Speech Recognition</string>
   <string name="asr_button_stop">Stop</string>
   <string name="assistant_detail_basic_desc">Configure name, avatar, model, and parameters</string>
@@ -641,7 +641,7 @@
   <string name="setting_asr_configure_step_itn">Enable ITN</string>
   <string name="setting_asr_configure_step_itn_desc">Inverse Text Normalization: convert spoken numbers to digits (e.g. 三百 → 300)</string>
   <string name="setting_asr_configure_step_timestamp">Enable Timestamps</string>
-  <string name="setting_asr_configure_step_timestamp_desc">Return word-level timestamps in delta events. Disabled by default to save tokens (rikkahub does not consume them yet)</string>
+  <string name="setting_asr_configure_step_timestamp_desc">Return word-level timestamps in delta events. Disabled by default to save tokens (Kuan API does not consume them yet)</string>
   <string name="setting_asr_configure_step_hotwords">Hotwords</string>
   <string name="setting_asr_configure_step_hotwords_desc">Comma-separated list of hotwords to boost recognition accuracy for proper nouns / domain terms</string>
   <string name="setting_asr_page_add_provider">Add ASR Provider</string>
@@ -875,7 +875,7 @@
   <string name="setting_page_search_title">Search Service</string>
   <string name="setting_page_share">Share</string>
   <string name="setting_page_share_desc">Share this app with friends</string>
-  <string name="setting_page_share_text">RikkaHub - Open Source Android AI Assistant\n\nWebsite: https://rikka-ai.com/</string>
+  <string name="setting_page_share_text">Kuan API - Open Source Android AI Assistant\n\nWebsite: https://kuanapi.kuankuan.de5.net/downloads/android.html#native</string>
   <string name="setting_page_sponsor_alert_confirm">Donate</string>
   <string name="setting_page_sponsor_alert_desc">You have launched the app over 100 times! If you enjoy using it, please consider supporting the developer.</string>
   <string name="setting_page_sponsor_alert_dismiss">Not Now</string>
@@ -904,7 +904,7 @@
   <string name="setting_page_web_server">Web Server</string>
   <string name="setting_page_web_server_address_note">Address Notes</string>
   <string name="setting_page_web_server_address_note_desc">LAN Address: Uses device WiFi IP, accessible to other devices on the same network. Unavailable on mobile data.\nLocal Address: Uses localhost, accessible on this device only.\nmDNS Address: Uses .local hostname, accessible by name from other devices on the same network without knowing the IP.</string>
-  <string name="setting_page_web_server_desc">Allow you access RikkaHub via Web</string>
+  <string name="setting_page_web_server_desc">Allow you access Kuan API via Web</string>
   <string name="setting_page_web_server_error">Error</string>
   <string name="setting_page_web_server_jwt_enable">Enable authentication</string>
   <string name="setting_page_web_server_jwt_enable_desc">Require password verification when accessing the web interface</string>
@@ -1825,9 +1825,9 @@
   <string name="assistant_page_local_tools_phone_use_title">Phone Use</string>
   <string name="assistant_page_local_tools_phone_use_desc">Let the AI read the screen and operate other apps on this phone</string>
   <string name="assistant_page_local_tools_phone_use_service_off">The accessibility service is off. Turn this switch off and on again to open the settings. If the system greys the option out, allow restricted settings for this app in App info first.</string>
-  <string name="assistant_page_local_tools_phone_use_enable_service">Turn on \"RikkaHub Phone Use\" in the accessibility settings</string>
-  <string name="assistant_page_local_tools_phone_use_service_stopped">The system has stopped the accessibility service, although the system settings still show it as on (some phones do this after the app is swiped away from recent apps). Turn this switch off and on again to open the settings, then turn \"RikkaHub Phone Use\" off and on there. Locking RikkaHub in recent apps and allowing auto-start keeps it from happening again.</string>
-  <string name="assistant_page_local_tools_phone_use_restart_service">Turn \"RikkaHub Phone Use\" off and on again in the accessibility settings</string>
+  <string name="assistant_page_local_tools_phone_use_enable_service">Turn on \"Kuan API Phone Use\" in the accessibility settings</string>
+  <string name="assistant_page_local_tools_phone_use_service_stopped">The system has stopped the accessibility service, although the system settings still show it as on (some phones do this after the app is swiped away from recent apps). Turn this switch off and on again to open the settings, then turn \"Kuan API Phone Use\" off and on there. Locking Kuan API in recent apps and allowing auto-start keeps it from happening again.</string>
+  <string name="assistant_page_local_tools_phone_use_restart_service">Turn \"Kuan API Phone Use\" off and on again in the accessibility settings</string>
   <string name="assistant_page_local_tools_phone_use_floating_window_required">Turn on the background floating window first</string>
   <string name="phone_use_accessibility_description">Lets the AI assistant read the screen and perform taps, swipes and text input for you when you enable the Phone Use tool. Nothing is done unless the assistant is running a task you asked for.</string>
   <string name="setting_display_page_auto_compress_title">Auto-compress Context</string>
@@ -1892,7 +1892,7 @@
   <string name="quick_start_page_ready_title">All set</string>
   <string name="quick_start_page_ready_desc">You can start chatting now. The optional features below can be set up any time.</string>
   <string name="quick_start_page_setup_title">Set up in a few minutes</string>
-  <string name="quick_start_page_setup_desc">RikkaHub doesn\'t provide models itself, so you need to connect a model provider. Finish the two required steps below to start chatting.</string>
+  <string name="quick_start_page_setup_desc">Connect a model provider and choose a default model to use your own API.</string>
   <string name="quick_start_page_start_chat">Start chatting</string>
   <string name="quick_start_page_required_steps">Required steps</string>
   <string name="quick_start_page_provider_title">Set up a provider</string>
@@ -1914,12 +1914,12 @@
   <string name="quick_start_page_not_selected">Not selected</string>
   <string name="quick_start_page_unnamed">Unnamed</string>
   <string name="quick_start_page_deepseek_title">Move from DeepSeek</string>
-  <string name="quick_start_page_deepseek_desc">Import your chat history from the DeepSeek website or app into RikkaHub, then connect the DeepSeek API to keep chatting.</string>
+  <string name="quick_start_page_deepseek_desc">Import your chat history from the DeepSeek website or app into Kuan API, then connect the DeepSeek API to keep chatting.</string>
   <string name="quick_start_page_deepseek_migrate_chats">Migrate chat history</string>
   <string name="quick_start_page_deepseek_export_title">Export data from DeepSeek</string>
   <string name="quick_start_page_deepseek_export_desc">Open the DeepSeek website in a browser and sign in, go to Settings → Data management, choose to export all chats, and save the downloaded ZIP file. No need to unzip it.</string>
   <string name="quick_start_page_deepseek_open_web">Open DeepSeek website</string>
-  <string name="quick_start_page_deepseek_import_title">Import into RikkaHub</string>
+  <string name="quick_start_page_deepseek_import_title">Import into Kuan API</string>
   <string name="quick_start_page_deepseek_import_desc">Choose the ZIP from the previous step. For each chat, the currently shown branch is imported, including reasoning and attachments, into the current assistant \"%1$s\". Chats that were already imported are skipped, so importing again is safe.</string>
   <string name="quick_start_page_deepseek_importing">Importing…</string>
   <string name="quick_start_page_deepseek_import_another">Import another ZIP</string>
@@ -1930,7 +1930,7 @@
   <string name="quick_start_page_deepseek_get_key">Get API Key</string>
   <string name="quick_start_page_deepseek_configure">Set up DeepSeek</string>
   <string name="quick_start_card_title">No models available yet</string>
-  <string name="quick_start_card_desc">RikkaHub needs a model provider to chat. Follow the quick start to set up a provider and default model, or migrate your chat history from DeepSeek.</string>
+  <string name="quick_start_card_desc">Kuan API needs a model provider to chat. Follow the quick start to set up a provider and default model, or migrate your chat history from DeepSeek.</string>
   <string name="setting_page_quick_start">Quick Start</string>
   <string name="setting_page_quick_start_desc">Set up providers and models step by step, or migrate from DeepSeek</string>
 </resources>

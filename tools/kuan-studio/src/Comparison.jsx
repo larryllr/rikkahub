@@ -38,6 +38,5 @@ export default function Comparison({ data, assetBase, language, usePrompt, downl
     <div className="kw-comparison-actions"><button type="button" className="kw-generate" onClick={() => usePrompt(item.prompt, item)}><Plus size={17}/>{zh ? '使用提示词' : 'Use prompt'}</button>
       <button type="button" className="kw-secondary" onClick={async () => { try { await navigator.clipboard.writeText(item.prompt); onNotice(zh ? '已复制' : 'Copied'); } catch { onNotice(zh ? '复制失败，请选择文本后复制' : 'Select the prompt and copy manually'); } }}><Copy size={17}/>{zh ? '复制' : 'Copy'}</button></div>
     {item.result && <dl className="kw-comparison-parameters">{item.result.parameters[language].map(row => <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>}
-    <footer><a href={`https://github.com/freestylefly/awesome-gpt-image-2/tree/${data.revision}/src/image25`} target="_blank" rel="noreferrer">{zh ? '上游记录与出处' : 'Upstream records and source'}</a></footer>
   </section>;
 }

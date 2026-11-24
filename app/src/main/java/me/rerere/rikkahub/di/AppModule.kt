@@ -11,7 +11,6 @@ import me.rerere.rikkahub.service.BackgroundShellManager
 import me.rerere.rikkahub.service.ChatFloatingTracker
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.service.MediaCreationService
 import me.rerere.rikkahub.ui.floating.ChatFloatingWindows
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceTerminalSessionManager
 import me.rerere.rikkahub.utils.EmojiData
@@ -143,18 +142,6 @@ val appModule = module {
             folderRepository = get(),
             backgroundShellManager = get(),
             kuanJobs = get(),
-        )
-    }
-
-    single {
-        MediaCreationService(
-            context = get(),
-            appScope = get(),
-            settingsStore = get(),
-            repository = get(),
-            manager = get(),
-            remoteFileStore = get(),
-            okHttpClient = get(),
         )
     }
 

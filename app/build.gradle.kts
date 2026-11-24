@@ -24,8 +24,8 @@ android {
         applicationId = "com.kuanapi.app.nativepreview"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "2.0.1"
+        versionCode = 5
+        versionName = "2.0.2"
         val updateManifest = providers.gradleProperty("kuanUpdateManifest")
             .orElse("https://kuanapi.kuankuan.de5.net/downloads/mobile-native/latest.json").get()
         require(updateManifest.isEmpty() || updateManifest.matches(Regex("https://[a-zA-Z0-9./_-]+"))) {

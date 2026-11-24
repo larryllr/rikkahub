@@ -7,7 +7,7 @@
   <string name="about_page_version">版本</string>
   <string name="about_page_website">官网</string>
   <string name="add">添加</string>
-  <string name="app_name">RikkaHub</string>
+  <string name="app_name">宽 API</string>
   <string name="asr_button_content_description">语音识别</string>
   <string name="asr_button_stop">停止</string>
   <string name="assistant_detail_basic_desc">配置名称、头像、模型和参数</string>
@@ -634,7 +634,7 @@
   <string name="setting_asr_configure_step_itn">逆文本归一化</string>
   <string name="setting_asr_configure_step_itn_desc">把口语数字转成阿拉伯数字（如「三百」→「300」），方便后续处理</string>
   <string name="setting_asr_configure_step_timestamp">返回时间戳</string>
-  <string name="setting_asr_configure_step_timestamp_desc">在 delta 事件里返回词级时间戳。rikkahub 当前不消费时间戳，默认关闭节省 token</string>
+  <string name="setting_asr_configure_step_timestamp_desc">在 delta 事件里返回词级时间戳。宽 API 当前不消费时间戳，默认关闭节省 token</string>
   <string name="setting_asr_configure_step_hotwords">热词</string>
   <string name="setting_asr_configure_step_hotwords_desc">逗号分隔的热词列表，提升专有名词、术语的识别准确率</string>
   <string name="setting_asr_page_add_provider">添加ASR提供商</string>
@@ -845,7 +845,7 @@
   <string name="setting_page_search_title">搜索服务</string>
   <string name="setting_page_share">分享</string>
   <string name="setting_page_share_desc">分享本APP给朋友</string>
-  <string name="setting_page_share_text">RikkaHub - 开源安卓AI助手\n\n官网: https://rikka-ai.com/</string>
+  <string name="setting_page_share_text">宽 API - 开源安卓AI助手\n\n官网: https://kuanapi.kuankuan.de5.net/downloads/android.html#native</string>
   <string name="setting_page_sponsor_alert_confirm">捐赠</string>
   <string name="setting_page_sponsor_alert_desc">您已启动应用超过100次！如果您喜欢使用它，请考虑支持开发者。</string>
   <string name="setting_page_sponsor_alert_dismiss">暂不</string>
@@ -873,7 +873,7 @@
   <string name="setting_page_web_server_address_note_desc">局域网地址：使用设备 WiFi IP，同一网络中的其他设备可访问。移动数据网络下不可用。
 本地地址：使用 localhost，仅限本设备访问。
 mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过名称访问，无需知道 IP。</string>
-  <string name="setting_page_web_server_desc">允许你通过网页访问 RikkaHub</string>
+  <string name="setting_page_web_server_desc">允许你通过网页访问 宽 API</string>
   <string name="setting_page_web_server_error">错误</string>
   <string name="setting_page_web_server_jwt_enable">启用身份验证</string>
   <string name="setting_page_web_server_jwt_enable_desc">访问网页界面时需要密码验证</string>
@@ -1827,9 +1827,9 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_local_tools_phone_use_title">Phone Use</string>
   <string name="assistant_page_local_tools_phone_use_desc">允许 AI 读取屏幕并操作此手机上的其他应用</string>
   <string name="assistant_page_local_tools_phone_use_service_off">无障碍服务已关闭。请将此开关关闭再打开，以进入设置。若该选项在系统中呈灰色不可用，请先在\"应用信息\"中为此应用允许受限设置。并且将应用的自启动开关打开，可以避免无障碍权限被频繁收回。</string>
-  <string name="assistant_page_local_tools_phone_use_enable_service">在无障碍设置中开启 \"RikkaHub Phone Use\"</string>
-  <string name="assistant_page_local_tools_phone_use_service_stopped">无障碍服务已被系统停止，但系统设置里仍显示开启（部分手机在最近任务中划掉应用后会这样）。请将此开关关闭再打开以进入设置，然后把 \"RikkaHub Phone Use\" 关闭再重新打开。在最近任务中锁定 RikkaHub 并允许自启动，可以避免再次发生。</string>
-  <string name="assistant_page_local_tools_phone_use_restart_service">请在无障碍设置中将 \"RikkaHub Phone Use\" 关闭再重新打开</string>
+  <string name="assistant_page_local_tools_phone_use_enable_service">在无障碍设置中开启 \"Kuan API Phone Use\"</string>
+  <string name="assistant_page_local_tools_phone_use_service_stopped">无障碍服务已被系统停止，但系统设置里仍显示开启（部分手机在最近任务中划掉应用后会这样）。请将此开关关闭再打开以进入设置，然后把 \"Kuan API Phone Use\" 关闭再重新打开。在最近任务中锁定 Kuan API 并允许自启动，可以避免再次发生。</string>
+  <string name="assistant_page_local_tools_phone_use_restart_service">请在无障碍设置中将 \"Kuan API Phone Use\" 关闭再重新打开</string>
   <string name="assistant_page_local_tools_phone_use_floating_window_required">请先开启后台悬浮窗</string>
   <string name="phone_use_accessibility_description">启用 Phone Use 工具后，允许 AI 助手读取屏幕并为您执行点按、滑动和文本输入。除非助手正在运行您请求的任务，否则不会执行任何操作。</string>
   <string name="setting_display_page_auto_compress_title">自动压缩上下文</string>
@@ -1894,7 +1894,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="quick_start_page_ready_title">一切就绪</string>
   <string name="quick_start_page_ready_desc">已经可以开始聊天了，下面的可选功能可以随时再来配置。</string>
   <string name="quick_start_page_setup_title">几分钟完成配置</string>
-  <string name="quick_start_page_setup_desc">RikkaHub 本身不提供模型，需要接入一个模型服务商。完成下面两个必要步骤就能开始聊天。</string>
+  <string name="quick_start_page_setup_desc">若要使用自己的 API，请连接模型服务商并选择默认模型。</string>
   <string name="quick_start_page_start_chat">开始聊天</string>
   <string name="quick_start_page_required_steps">必要步骤</string>
   <string name="quick_start_page_provider_title">配置提供商</string>
@@ -1916,12 +1916,12 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="quick_start_page_not_selected">未选择</string>
   <string name="quick_start_page_unnamed">未命名</string>
   <string name="quick_start_page_deepseek_title">从 DeepSeek 搬家</string>
-  <string name="quick_start_page_deepseek_desc">把 DeepSeek 网页版或 App 里的聊天记录导入 RikkaHub，再接上 DeepSeek API 就能接着聊。</string>
+  <string name="quick_start_page_deepseek_desc">把 DeepSeek 网页版或 App 里的聊天记录导入 宽 API，再接上 DeepSeek API 就能接着聊。</string>
   <string name="quick_start_page_deepseek_migrate_chats">迁移聊天记录</string>
   <string name="quick_start_page_deepseek_export_title">从 DeepSeek 导出数据</string>
   <string name="quick_start_page_deepseek_export_desc">在浏览器打开 DeepSeek 网页版并登录，进入「设置 → 数据管理」，选择导出全部对话，保存下载到的 ZIP 文件，不需要解压。</string>
   <string name="quick_start_page_deepseek_open_web">打开 DeepSeek 网页版</string>
-  <string name="quick_start_page_deepseek_import_title">导入到 RikkaHub</string>
+  <string name="quick_start_page_deepseek_import_title">导入到 宽 API</string>
   <string name="quick_start_page_deepseek_import_desc">选择刚才的 ZIP。每个会话导入当前显示的那条分支，包括思考过程和附件，会放进当前助手「%1$s」。导入过的会话会自动跳过，可以放心重复导入。</string>
   <string name="quick_start_page_deepseek_importing">正在导入…</string>
   <string name="quick_start_page_deepseek_import_another">再导入一个 ZIP</string>
@@ -1932,7 +1932,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="quick_start_page_deepseek_get_key">获取 API Key</string>
   <string name="quick_start_page_deepseek_configure">配置 DeepSeek</string>
   <string name="quick_start_card_title">还没有可用的模型</string>
-  <string name="quick_start_card_desc">RikkaHub 需要接入模型服务商才能聊天。跟着快速入门配置提供商和默认模型，也可以从 DeepSeek 迁移聊天记录。</string>
+  <string name="quick_start_card_desc">宽 API 需要接入模型服务商才能聊天。跟着快速入门配置提供商和默认模型，也可以从 DeepSeek 迁移聊天记录。</string>
   <string name="setting_page_quick_start">快速入门</string>
   <string name="setting_page_quick_start_desc">一步步配置提供商和模型，或从 DeepSeek 迁移</string>
 </resources>

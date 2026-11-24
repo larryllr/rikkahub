@@ -224,7 +224,7 @@ class SafeModeActivity : ComponentActivity() {
                             onClick = {
                                 val timestamp = LocalDateTime.now()
                                     .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-                                exportLauncher.launch("rikkahub_backup_$timestamp.zip")
+                                exportLauncher.launch("kuanapi_backup_$timestamp.zip")
                             },
                             enabled = !busy,
                             modifier = Modifier.fillMaxWidth()

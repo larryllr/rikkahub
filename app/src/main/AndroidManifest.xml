@@ -134,10 +134,6 @@
         android:value="user-initiated shell commands running in a local sandbox" />
     </service>
     <service
-      android:name=".service.MediaCreationForegroundService"
-      android:exported="false"
-      android:foregroundServiceType="dataSync" />
-    <service
       android:name=".service.MemoryDreamForegroundService"
       android:exported="false"
       android:foregroundServiceType="dataSync" />
