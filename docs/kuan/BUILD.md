@@ -1,12 +1,12 @@
 # 宽 API 原生候选：构建与验收
 
-记录日期：2026-11-24（北京时间）。此分支从 RikkaHub 3.3.1 派生，宽 API 2.0 使用与经典版分离的分发渠道。见 [2.0.2 发布与撤回](RELEASE-2.0.2.md)、[2.0.1 生图接入](RELEASE-2.0.1.md) 和 [2.0.0 首次发布](RELEASE-2.0.md)。
+记录日期：2026-11-24（北京时间）。此分支从 RikkaHub 3.3.1 派生，宽 API 2.0 使用与经典版分离的分发渠道。见 [2.0.3 发布与撤回](RELEASE-2.0.3.md)、[2.0.2 入口](RELEASE-2.0.2.md)、[2.0.1 生图接入](RELEASE-2.0.1.md) 和 [2.0.0 首次发布](RELEASE-2.0.md)。
 
 ## 源码与版本
 
 - 上游：<https://github.com/rikkahub/rikkahub/tree/2435dbdf4690fe26d424b8d1ab778bcde9c6cd75>，标签 `3.3.1`。
 - 基准宽 API 正式 Android：`1.6.10 / code 33`。安装包和安装包更新清单不改；经典版设置中新下载链接随单独的 Chat 资源包发布。
-- 2.0 保留预览的包名 `com.kuanapi.app.nativepreview`，版本为 `2.0.2 / code 5`，Debug 变体额外有 `.debug`。它与经典宽 API `com.kuanapi.app` 及官方 RikkaHub 并装；用原生版签名可升级早期 2.0。
+- 2.0 保留预览的包名 `com.kuanapi.app.nativepreview`，版本为 `2.0.3 / code 6`，Debug 变体额外有 `.debug`。它与经典宽 API `com.kuanapi.app` 及官方 RikkaHub 并装；用原生版签名可升级早期 2.0。
 - 对应客户端源保留 AGPL-3.0 和原作者版权，参见根目录 `LICENSE`。对外分发派生 APK 时同时提供与安装包精确对应的完整源码、补丁、许可证和构建步骤。此仓只调用服务端 HTTP 公开接口，不包含私有服务端源码、数据库、用户内容、生产签名或配置。
 
 ## 构建要求

@@ -80,3 +80,38 @@
 .kw-comparison-parameters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:0;font-size:12px;line-height:1.6}
 .kw-comparison-parameters div{min-width:0}.kw-comparison-parameters dt{color:var(--muted)}.kw-comparison-parameters dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
 @media(max-width:700px){.kw-header nav{overflow-x:auto;justify-content:flex-start;overscroll-behavior-x:contain}.kw-header nav>button{flex:none}.kw-comparison h2{font-size:18px}.kw-comparison-parameters{grid-template-columns:1fr}.kw-comparison-images figcaption{padding:2px 5px;font-size:10px}}
+
+.kw-composer-footer{padding:0 20px 16px}
+.kw-composer-footer>.kw-generate{width:100%}
+@media(max-width:700px){.kw-composer:not(.expanded) .kw-composer-footer{display:none}}
+
+/* The Android Scaffold establishes the viewport, including the system bars and IME. */
+html.studio-native,.studio-native body,.studio-native #root{width:100%;margin:0;overflow:hidden}
+.studio-native #root{height:var(--kuan-studio-height,100vh)}
+.studio-native .kuan-image-workbench{height:100%;min-height:0}
+.studio-native .kw-header{flex:none}
+.studio-native .kw-header nav{min-width:0;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain}
+.studio-native .kw-header nav::-webkit-scrollbar{display:none}
+.studio-native .kw-header nav>button{flex:none}
+.studio-native .kw-connection{position:absolute;inset:var(--header) 0 auto;max-height:calc(100% - var(--header));overflow:auto;z-index:8}
+.studio-native .kw-error{flex-shrink:0;max-height:25%;overflow:auto;align-items:flex-start}
+.studio-native .kw-lightbox>img{flex:1;min-height:0;height:auto}
+@media(max-width:700px){
+  .studio-native .kuan-image-workbench{--header:48px}
+  .studio-native .kw-header{height:var(--header);min-height:var(--header);padding:0 6px;align-items:center}
+  .studio-native .kw-header nav{position:static;height:100%;flex:1;align-items:stretch}
+  .studio-native .kw-header nav>button{height:100%}
+  .studio-native .kw-header-actions>.kw-icon,
+  .studio-native .kw-header-actions>.kw-language{width:32px;height:40px}
+  .studio-native .kw-composer.expanded{display:flex;flex:1;flex-direction:column;min-height:0;max-height:none;overflow:hidden;border-bottom:0}
+  .studio-native .kw-mobile-composer{flex:none;border-bottom:1px solid var(--line)}
+  .studio-native .kw-composer.expanded .kw-composer-body{flex:1;min-height:0;overflow:auto;padding:14px 16px;overscroll-behavior:contain}
+  .studio-native .kw-composer-footer{flex:none;padding:8px 16px;border-top:1px solid var(--line)}
+  .studio-native [data-editor=open] .kw-layout>.kw-main{display:none}
+  .studio-native .kw-main:has(.kw-empty){min-height:0}
+  .studio-native .kw-inspector>footer{padding-bottom:14px}
+}
+@media(max-width:580px){
+  .studio-native .kw-header nav>button{width:42px;padding:0;justify-content:center}
+  .studio-native .kw-header nav>button>span{display:none}
+}

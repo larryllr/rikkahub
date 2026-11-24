@@ -73,11 +73,15 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.File02
+import me.rerere.hugeicons.stroke.Link01
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.kuan.finishKuanPresentation
 import me.rerere.rikkahub.data.kuan.kuanFormSource
+import me.rerere.rikkahub.data.kuan.needsKuanPresentation
+import me.rerere.rikkahub.data.kuan.withKuanQuestionHistory
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
@@ -87,8 +91,6 @@ import me.rerere.rikkahub.ui.components.richtext.SelectableContent
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
 import me.rerere.rikkahub.ui.components.ui.ChainOfThought
-import me.rerere.rikkahub.ui.components.ui.Favicon
-import me.rerere.rikkahub.ui.components.ui.FaviconRow
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.context.LocalSettings
@@ -97,10 +99,10 @@ import me.rerere.rikkahub.ui.theme.LocalChatFontFamily
 import me.rerere.rikkahub.ui.theme.rememberChatFontFamily
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.openUrl
-import me.rerere.rikkahub.utils.urlDecode
 import me.rerere.ui.charts.ChartCard
 import me.rerere.ui.charts.ChartSpec
 import me.rerere.ui.webview.WebViewContentCache
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -124,9 +126,14 @@ fun ChatMessage(
     onClearTranslation: (UIMessage) -> Unit = {},
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
-    onDraftFollowUp: ((String) -> Unit)? = null,
+    onFollowUp: ((String) -> Unit)? = null,
 ) {
-    val message = node.messages[node.selectIndex]
+    val stored = node.messages[node.selectIndex]
+    val context = LocalContext.current
+    var message by remember(stored, loading) { mutableStateOf(stored) }
+    if (!loading && remember(stored) { stored.needsKuanPresentation() }) {
+        LaunchedEffect(stored, context) { message = finishKuanPresentation(context, stored) }
+    }
     if (message.isContextCheckpoint) {
         ChatMessageContextCheckpoint(
             message = message,
@@ -157,14 +164,15 @@ fun ChatMessage(
     var showActionsSheet by remember { mutableStateOf(false) }
     var showSelectCopySheet by remember { mutableStateOf(false) }
     val navController = LocalNavController.current
-    val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        if (!message.parts.isEmptyUIMessage() || message.parts.any { it is UIMessagePart.Text && it.kuanFormSource() != null }) {
+        if (!message.parts.isEmptyUIMessage() || message.annotations.isNotEmpty() ||
+            message.parts.any { it is UIMessagePart.Text && it.kuanFormSource() != null }
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth(),
@@ -206,7 +214,7 @@ fun ChatMessage(
                 message.parts.fastForEachIndexed { index, part ->
                     if (part is UIMessagePart.Text && part.kuanFormSource() != null) {
                         key(message.id, index) {
-                            KuanFollowUps(part, onDraftFollowUp)
+                            KuanFollowUps(part, onFollowUp)
                         }
                     }
                 }
@@ -263,7 +271,7 @@ fun ChatMessage(
     }
     if (showActionsSheet) {
         ChatMessageActionsSheet(
-            message = message,
+            message = message.withKuanQuestionHistory(),
             onEdit = onEdit,
             onDelete = onDelete,
             onShare = onShare,
@@ -297,7 +305,7 @@ fun ChatMessage(
 
     if (showSelectCopySheet) {
         ChatMessageCopySheet(
-            message = message,
+            message = message.withKuanQuestionHistory(),
             onDismissRequest = {
                 showSelectCopySheet = false
             }
@@ -641,24 +649,26 @@ private fun Modifier.clipDrawing(shape: Shape): Modifier = drawWithCache {
 }
 
 @Composable
-private fun ChatMessageCitations(annotations: List<UIMessageAnnotation>) {
-    var expand by remember { mutableStateOf(false) }
-    val urls = remember(annotations) {
-        annotations.map { annotation ->
-            when (annotation) {
-                is UIMessageAnnotation.UrlCitation -> annotation.url
-            }
-        }
+internal fun ChatMessageCitations(annotations: List<UIMessageAnnotation>) {
+    val links = remember(annotations) {
+        annotations.filterIsInstance<UIMessageAnnotation.UrlCitation>()
+            .mapNotNull { citation ->
+                val url = citation.url.toHttpUrlOrNull()
+                    ?.takeIf { it.username.isEmpty() && it.password.isEmpty() } ?: return@mapNotNull null
+                citation.copy(title = citation.title.ifBlank { url.host }, url = url.toString())
+            }.distinctBy { it.url }
     }
+    if (links.isEmpty()) return
+    var expand by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier.animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec()),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         ChatMessageFileChip(
-            text = stringResource(R.string.citations_count, annotations.size),
+            text = stringResource(R.string.citations_count, links.size),
             onClick = { expand = !expand },
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = { FaviconRow(urls = urls, size = 18.dp) },
+            icon = { Icon(HugeIcons.Link01, contentDescription = null, modifier = Modifier.size(18.dp)) },
         )
         if (expand) {
             Surface(
@@ -674,24 +684,11 @@ private fun ChatMessageCitations(annotations: List<UIMessageAnnotation>) {
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        annotations.fastForEachIndexed { index, annotation ->
-                            when (annotation) {
-                                is UIMessageAnnotation.UrlCitation -> {
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Favicon(annotation.url, modifier = Modifier.size(20.dp))
-                                        Text(
-                                            text = buildAnnotatedString {
-                                                append("${index + 1}. ")
-                                                withLink(LinkAnnotation.Url(annotation.url)) {
-                                                    append(annotation.title.urlDecode())
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                            }
+                        links.forEachIndexed { index, link ->
+                            Text(text = buildAnnotatedString {
+                                append("${index + 1}. ")
+                                withLink(LinkAnnotation.Url(link.url)) { append(link.title) }
+                            })
                         }
                     }
                 }

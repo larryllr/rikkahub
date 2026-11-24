@@ -13,6 +13,7 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.openai.OpenAIWire
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.utils.UpdateDownload
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -88,6 +89,37 @@ class KuanContractsTest {
         assertEquals(emptyList<StreamChunk>(), decoder.accept("[DONE]"))
         val truncated = runCatching { KuanStreamDecoder(wire, false).accept("[DONE]") }.exceptionOrNull()
         assertTrue(truncated is KuanProtocolError)
+    }
+
+    @Test
+    fun nativeMetadataFramesPreserveRawDeltasAndOnlyAttachMatchingPublicSources() {
+        val decoder = KuanStreamDecoder(wire, false)
+        val content = decoder.accept(
+            """{"id":"x","message_id":"answer","choices":[{"delta":{"content":"Streamed answer"}}]}""",
+        )
+        assertEquals("Streamed answer", content.filterIsInstance<StreamChunk.TextDelta>().single().text)
+        assertTrue(decoder.accept(
+            """{"id":"x","choices":[{"delta":{"kuan_native_markdown":{"source":"chatgpt","format":"text/markdown","message_id":"answer","text":"Corrected answer"}}}]}""",
+        ).isEmpty())
+        assertTrue(decoder.accept(
+            """{"id":"x","choices":[{"delta":{"kuan_native_presentation":{"source":"chatgpt","version":1,"message_id":"answer","components":[
+                {"id":"one","kind":"Cite","sources":[{"url":"https://example.com/doc","title":"Source"},
+                    {"url":"https://private.example.com/?access_token=redacted","title":"Not public"},
+                    {"url":"https://127.0.0.1/","title":"Not public"},
+                    {"url":"https://example.com/doc","title":"Duplicate"}]}]}}}]}""".replace("\n", ""),
+        ).isEmpty())
+        decoder.accept("""{"id":"x","choices":[{"finish_reason":"stop","delta":{}}]}""")
+        val terminal = decoder.accept("[DONE]")
+        assertEquals(
+            "Corrected answer",
+            terminal.filterIsInstance<StreamChunk.TextStart>().single().metadata?.string(KUAN_NATIVE_MARKDOWN),
+        )
+        assertEquals(
+            listOf(UIMessageAnnotation.UrlCitation("Source", "https://example.com/doc")),
+            terminal.filterIsInstance<StreamChunk.Annotations>().single().annotations,
+        )
+        assertTrue(terminal.none { it is StreamChunk.TextDelta })
+        assertTrue(terminal.last() is StreamChunk.Finish)
     }
 
     @Test

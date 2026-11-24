@@ -156,7 +156,7 @@ class ChatRequestFactory(
             stream = turn.assistant.streamOutput,
             retry = if (turn.providerSetting.kuanRoute() == null) turn.settings.retryPolicy() else RetryPolicy.NONE,
         )
-        val presentation = KuanPresentationPreview(context).takeIf { turn.providerSetting.kuanRoute()?.lane == KuanLane.WEB }
+        val presentation = turn.providerSetting.kuanRoute()?.let { KuanPresentationPreview(context) }
         val hooks = object : AgentHooks {
             override suspend fun prepareStep(messages: List<UIMessage>): StepRequest {
                 Log.i(TAG, "prepareStep: ${turn.model.id}")

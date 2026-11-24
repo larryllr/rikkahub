@@ -305,6 +305,8 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val workspaceRepository: WorkspaceRepository = koinInject()
+    val focusManager = LocalFocusManager.current
+    val softwareKeyboardController = LocalSoftwareKeyboardController.current
     val sessionActivity by vm.sessionActivity.collectAsStateWithLifecycle()
 
     var previewMode by rememberSaveable { mutableStateOf(false) }
@@ -501,7 +503,20 @@ private fun ChatPageContent(
                     inputState.editingMessage = null
                     inputState.setMessageText(suggestion)
                 },
-                onDraftFollowUp = inputState::appendText.takeUnless { inputState.isEditing() },
+                onFollowUp = if (inputState.isEditing()) null else { prompt ->
+                    if (loadingJob == null) {
+                        val appended = inputState.answerFollowUp(prompt, canSend = currentChatModel != null) { answer ->
+                            focusManager.clearFocus(force = true)
+                            softwareKeyboardController?.hide()
+                            vm.handleMessageSend(listOf(UIMessagePart.Text(answer)))
+                            scope.launch {
+                                delay(100.milliseconds)
+                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                            }
+                        }
+                        if (appended) inputState.focusRequester.requestFocus()
+                    }
+                },
                 onTranslate = { message, locale ->
                     vm.translateMessage(message, locale)
                 },

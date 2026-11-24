@@ -2,13 +2,16 @@ import {
   extractKuanRichInteractions,
   normalizeKuanRichDisplayText,
   normalizeKuanRichHistoryText,
+  splitKuanRichCitationSection,
 } from './web-presentation.mjs';
 
-export function project(source, selections = {}, streaming = false) {
-  const groups = streaming ? [] : extractKuanRichInteractions(source, selections);
-  const history = streaming ? null : normalizeKuanRichHistoryText(source);
-  const text = streaming || groups.length
+export function project(source, selections = {}, streaming = false, plain = false) {
+  const groups = streaming || plain ? [] : extractKuanRichInteractions(source, selections);
+  const history = streaming ? null : plain ? source : normalizeKuanRichHistoryText(source);
+  const visible = !plain && (streaming || groups.length)
     ? normalizeKuanRichDisplayText(source, null, streaming)
-    : history;
-  return { text, groups, history };
+    : history ?? source;
+  if (streaming) return { text: visible, groups, history, links: [] };
+  const { body, links } = splitKuanRichCitationSection(visible);
+  return { text: body, groups, history, links };
 }

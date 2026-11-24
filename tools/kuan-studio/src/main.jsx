@@ -17,6 +17,7 @@ gsap.registerPlugin(useGSAP);
 const DEFAULTS = {prompt:'',model:'',autoModel:true,size:'1024x1024',quality:'auto',outputFormat:'png',outputCompression:90,count:1};
 const strings = {
   zh:{title:'图像工作台',brand:'宽 API',back:'返回对话',gallery:'案例库',templates:'工业模板',history:'生成记录',guide:'风格指南',
+    editor:'编辑提示词',closeEditor:'收起编辑器',
     prompt:'提示词',promptPlaceholder:'描述你想创作的画面，或从右侧选择一个案例…',generate:'生成图像',model:'生图模型',auto:'自动 · 最新可用',
     size:'画幅',custom:'自定义',quality:'画质',format:'格式',count:'数量',refs:'参考图片',search:'搜索案例、画面、提示词…',
     all:'全部',category:'分类',style:'风格',scene:'场景',favorites:'收藏',use:'使用提示词',copy:'复制',copied:'已复制',
@@ -30,6 +31,7 @@ const strings = {
     archive:'下载风格资料',compare:'2.5 对比',downloading:'正在下载',saved:'已保存到本机，再次点击可打开',albumSaved:'已保存到系统相册「宽api」，再次点击可打开',started:'已交给浏览器下载',openFile:'打开本机文件',selected:'已选案例',balance:'余额',storageError:'记录未能保存到此设备，请及时下载图片',
     notice:'素材与提示词来自 awesome-gpt-image-2，遵循 MIT 许可；原始作者信息保留在案例中。'},
   en:{title:'Image Studio',brand:'KuanAPI',back:'Back to chat',gallery:'Gallery',templates:'Templates',history:'History',guide:'Style guide',
+    editor:'Edit prompt',closeEditor:'Close editor',
     prompt:'Prompt',promptPlaceholder:'Describe your image, or choose a case from the gallery…',generate:'Generate image',model:'Image model',auto:'Auto · latest available',
     size:'Aspect ratio',custom:'Custom',quality:'Quality',format:'Format',count:'Images',refs:'Reference images',search:'Search cases, styles, prompts…',
     all:'All',category:'Category',style:'Style',scene:'Scene',favorites:'Favorites',use:'Use prompt',copy:'Copy',copied:'Copied',
@@ -144,7 +146,12 @@ function App({bridge,assetBase,native}) {
     if(draft.prompt.trim()&&draft.prompt!==prompt){setPendingPrompt({prompt,item});return;}
     applyPrompt(prompt,item);
   };
-  const applyPrompt=(prompt,item)=>{patchDraft({prompt});setPendingPrompt(null);closeSelected();setEditorOpen(true);requestAnimationFrame(()=>{promptRef.current?.focus();if(innerWidth<700)promptRef.current?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});});};
+  const openEditor=()=>{
+    setEditorOpen(true);
+    if(!native||!matchMedia('(max-width:700px)').matches)requestAnimationFrame(()=>promptRef.current?.focus());
+  };
+  const selectView=id=>{promptRef.current?.blur();setEditorOpen(false);setSettingsOpen(false);closeSelected();setView(id);};
+  const applyPrompt=(prompt,item)=>{patchDraft({prompt});setPendingPrompt(null);closeSelected();openEditor();};
   const favorite=id=>setFavorites(old=>old.includes(id)?old.filter(value=>value!==id):[...old,id]);
   const persist=async task=>{try{await saveTask(task);}catch{if(alive.current)setNotice(t.storageError);}};
   const putTask=task=>{if(alive.current)setTasks(old=>[task,...old.filter(row=>row.id!==task.id)]);};
@@ -169,7 +176,8 @@ function App({bridge,assetBase,native}) {
     if(validation){setNotice(validation);return;}
     const task={...cleanDraft(input),id:crypto.randomUUID(),userId:String(active.userId),createdAt:Date.now(),status:'generating',
       references:structuredClone(override?.references||references),images:[]};
-    const controller=new AbortController();controllers.current.set(task.id,controller);setTick(task.createdAt);putTask(task);void persist(task);setView('history');setSelected(null);
+    const controller=new AbortController();controllers.current.set(task.id,controller);setTick(task.createdAt);putTask(task);void persist(task);
+    selectView('history');listRef.current?.scrollTo({top:0});
     try{
       const result=await bridge.generate({...cleanDraft(input),referenceImages:task.references.map(ref=>ref.dataUrl),signal:controller.signal});
       if(controller.signal.aborted)throw new DOMException('Aborted','AbortError');
@@ -197,10 +205,10 @@ function App({bridge,assetBase,native}) {
   const sizeError=draft.model?bridge.validate(draft.size,draft.model):'';
   const [width,height]=draft.size.split('x');
 
-  return <div ref={root} className="kuan-image-workbench" data-theme={theme} data-host={native?'android':undefined}>
+  return <div ref={root} className="kuan-image-workbench" data-theme={theme} data-host={native?'android':undefined} data-editor={editorOpen?'open':undefined}>
     <header className="kw-header">
       {!native&&<div className="kw-brand"><IconButton icon={ArrowLeft} label={t.back} onClick={()=>bridge.back()}/><img src="/logo.png" alt=""/><div><strong>{t.brand}</strong><span>{t.title}</span></div></div>}
-      <nav aria-label={t.title}>{tabs.map(([id,Icon])=><button type="button" key={id} className={view===id?'active':''} onClick={()=>{setView(id);closeSelected();}}><Icon size={17}/><span>{t[id]}</span>{id==='history'&&tasks.some(task=>task.status==='generating')&&<i/>}</button>)}</nav>
+      <nav aria-label={t.title}>{tabs.map(([id,Icon])=><button type="button" key={id} className={view===id?'active':''} aria-label={t[id]} title={t[id]} aria-current={view===id?'page':undefined} onClick={()=>selectView(id)}><Icon size={17}/><span>{t[id]}</span>{id==='history'&&tasks.some(task=>task.status==='generating')&&<i/>}</button>)}</nav>
       <div className="kw-header-actions"><span className="kw-balance">{connection&&`$${Number(connection.balance||0).toFixed(2)}`}</span>
         <IconButton icon={theme==='dark'?Sun:Moon} label={theme==='dark'?'Light theme':'Dark theme'} onClick={()=>setTheme(theme==='dark'?'light':'dark')}/>
         <button type="button" className="kw-language" onClick={()=>setLanguage(language==='zh'?'en':'zh')}>{language==='zh'?'EN':'中'}</button>
@@ -215,8 +223,10 @@ function App({bridge,assetBase,native}) {
     {error&&<div className="kw-error" role="alert"><span>{error}</span><button type="button" onClick={()=>refresh()}>{t.retryLoad}</button></div>}
     <div className="kw-layout">
       <aside className={`kw-composer ${editorOpen?'expanded':''}`}>
-        <button type="button" className="kw-mobile-composer" onClick={()=>setEditorOpen(!editorOpen)}><WandSparkles size={18}/><span>{draft.prompt?draft.prompt.slice(0,42):t.prompt}</span>{editorOpen?<ChevronUp size={17}/>:<ChevronDown size={17}/>}</button>
-        <div className="kw-composer-body">
+        <button type="button" className="kw-mobile-composer" aria-expanded={editorOpen} aria-controls="studio-prompt-fields" aria-label={editorOpen?t.closeEditor:t.editor} onClick={()=>{
+          if(editorOpen){promptRef.current?.blur();setEditorOpen(false);}else{closeSelected();setSettingsOpen(false);openEditor();}
+        }}><WandSparkles size={18}/><span>{editorOpen?t.editor:draft.prompt||t.editor}</span>{editorOpen?<ChevronUp size={17}/>:<ChevronDown size={17}/>}</button>
+        <div id="studio-prompt-fields" className="kw-composer-body">
           <div className="kw-section-title"><h1>{t.prompt}</h1><div><IconButton icon={Plus} label={language==='zh'?'新建提示词':'New prompt'} onClick={()=>{patchDraft({prompt:''});setReferences([]);promptRef.current?.focus();}}/><CopyButton value={draft.prompt} t={t} onNotice={setNotice}/></div></div>
           <textarea ref={promptRef} className="kw-prompt" aria-label={t.prompt} placeholder={t.promptPlaceholder} value={draft.prompt} onChange={event=>patchDraft({prompt:event.target.value})}
             onPaste={event=>{const files=[...event.clipboardData.files];if(files.length){event.preventDefault();void addFiles(files);}}}/>
@@ -238,15 +248,17 @@ function App({bridge,assetBase,native}) {
             <label className="kw-field">{t.format}<select value={draft.outputFormat} onChange={e=>patchDraft({outputFormat:e.target.value})}>{['png','jpeg','webp'].map(format=><option value={format} key={format}>{format.toUpperCase()}</option>)}</select></label></div>
           {draft.outputFormat!=='png'&&<label className="kw-field">{language==='zh'?'压缩质量':'Compression quality'} · {draft.outputCompression}<input type="range" min="1" max="100" value={draft.outputCompression} onChange={e=>patchDraft({outputCompression:Number(e.target.value)})}/></label>}
           <div className="kw-count"><span>{t.count}</span><div role="group" aria-label={t.count}>{[1,2,3,4].map(n=><button type="button" key={n} className={draft.count===n?'active':''} onClick={()=>patchDraft({count:n})}>{n}</button>)}</div></div>
-          <button type="button" className="kw-generate" disabled={!connection||!draft.model||!draft.prompt.trim()||Boolean(sizeError)} onClick={()=>generate()}><WandSparkles size={18}/>{t.generate}<ArrowUpRight size={16}/></button>
           <div className="kw-connection-status"><span className={`kw-dot ${connection?'ready':''}`}/><span>{connection?.groupName||t.network}</span><span>{connection?.baseUrl?new URL(connection.baseUrl).host:''}</span></div>
           {connection&&!connection.models.length&&<p role="status">{language==='zh'?'当前分组没有可用生图模型。':'No image models are available in this group.'}</p>}
+        </div>
+        <div className="kw-composer-footer">
+          <button type="button" className="kw-generate" disabled={!connection||!draft.model||!draft.prompt.trim()||Boolean(sizeError)} onClick={()=>generate()}><WandSparkles size={18}/>{t.generate}<ArrowUpRight size={16}/></button>
         </div>
       </aside>
       <main className="kw-main" ref={listRef}>
         <div className="kw-content-heading"><div><span className="kw-eyebrow">{view==='gallery'?'PROMPT COLLECTION':view==='templates'?'PROMPT SYSTEMS':view==='history'?'YOUR CREATIONS':'REFERENCE LIBRARY'}</span><h2>{t[view]}<span>{view==='gallery'?data?.totalCases:view==='templates'?library?.templates?.length:view==='history'?tasks.length:''}</span></h2></div>
           {(view==='gallery'||view==='templates')&&<IconButton icon={SlidersHorizontal} label={t.settings} active={filtersOpen} onClick={()=>setFiltersOpen(!filtersOpen)}/>}
-          {view==='history'&&<IconButton icon={Plus} label={t.generate} onClick={()=>{setEditorOpen(true);promptRef.current?.focus();}}/>}
+          {view==='history'&&<IconButton icon={Plus} label={t.generate} onClick={openEditor}/>}
         </div>
         {(view==='gallery'||view==='templates')&&<><div className="kw-search-row"><label className="kw-search"><Search size={17}/><input type="search" aria-label={t.search} placeholder={t.search} value={filters.query} onChange={e=>setFilters(old=>({...old,query:e.target.value}))}/></label>
           {view==='gallery'&&<IconButton icon={Heart} label={t.favoriteOnly} active={filters.favoritesOnly} onClick={()=>setFilters(old=>({...old,favoritesOnly:!old.favoritesOnly}))}/>}</div>
@@ -271,7 +283,7 @@ function App({bridge,assetBase,native}) {
             {task.status==='generating'&&!task.images.length&&<div className="kw-generating"><div className="kw-generating-frame"><i/><WandSparkles size={28}/></div><span>{t.running}…</span></div>}
             <div className="kw-task-images">{task.images.map((url,index)=><figure key={index}><button type="button" onClick={()=>setPreview({url,task,index})}><img src={url} alt={task.prompt} loading="lazy"/></button><figcaption>{downloadButton(url,`kuanapi-${task.id}-${index+1}.${task.outputFormat}`)}<IconButton icon={Plus} label={t.reference} onClick={()=>reuse(url)}/><IconButton icon={Maximize2} label={t.read} onClick={()=>setPreview({url,task,index})}/></figcaption></figure>)}</div>
             {task.error&&<p className="kw-field-error">{task.error}</p>}<details><summary>{task.prompt}</summary><pre>{task.prompt}</pre>{task.revisedPrompt&&<pre>{task.revisedPrompt}</pre>}</details>
-            <footer><span>{new Date(task.createdAt).toLocaleString(language)}</span><CopyButton value={task.prompt} t={t} onNotice={setNotice}/><button type="button" className="kw-link" onClick={()=>{patchDraft(cleanDraft(task));setReferences(task.references||[]);setEditorOpen(true);promptRef.current?.focus();}}><WandSparkles size={15}/>{t.use}</button>{task.status!=='generating'&&<IconButton icon={RotateCcw} label={t.retry} onClick={()=>generate(task)}/>}</footer>
+            <footer><span>{new Date(task.createdAt).toLocaleString(language)}</span><CopyButton value={task.prompt} t={t} onNotice={setNotice}/><button type="button" className="kw-link" onClick={()=>{patchDraft(cleanDraft(task));setReferences(task.references||[]);openEditor();}}><WandSparkles size={15}/>{t.use}</button>{task.status!=='generating'&&<IconButton icon={RotateCcw} label={t.retry} onClick={()=>generate(task)}/>}</footer>
           </article>)}</div>}
         {view==='compare'&&comparisons&&<Comparison data={comparisons} assetBase={assetBase} language={language} usePrompt={choosePrompt} download={download} onNotice={setNotice}/>}
         {view==='guide'&&<div className="kw-guide"><div className="kw-guide-actions"><button type="button" className="kw-secondary" onClick={()=>download(assetBase+'templates.md','templates.md')} disabled={downloads[assetBase+'templates.md']==='pending'}><Download size={16}/>{downloads[assetBase+'templates.md']==='ready'?t.openFile:t.guideDownload}</button><button type="button" className="kw-secondary" onClick={()=>download(assetBase+'style-library.zip','style-library.zip')} disabled={downloads[assetBase+'style-library.zip']==='pending'}><BookOpen size={16}/>{downloads[assetBase+'style-library.zip']==='ready'?t.openFile:t.archive}</button></div>

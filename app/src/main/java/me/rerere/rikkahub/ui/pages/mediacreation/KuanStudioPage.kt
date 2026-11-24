@@ -16,8 +16,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.doOnLayout
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.FilterInputStream
 import kotlin.coroutines.resume
@@ -105,6 +109,7 @@ internal fun KuanStudioPage(
     }
     Scaffold(
         containerColor = CustomColors.topBarColors.containerColor,
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.kuan_studio_title), maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -125,7 +130,7 @@ internal fun KuanStudioPage(
             )
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
             when {
                 auth.loading || profile != null && group == null && directory.busy ->
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -224,6 +229,7 @@ internal fun StudioWebView(
             WebView(ctx).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
+                settings.useWideViewPort = true
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -240,7 +246,10 @@ internal fun StudioWebView(
                         studioResponse(view.context, request, studio, references)
 
                     override fun onPageFinished(view: WebView, url: String) {
-                        if (url == STUDIO_PAGE) runtime.connect(view)
+                        if (url == STUDIO_PAGE) {
+                            fitStudioViewport(view)
+                            runtime.connect(view)
+                        }
                     }
 
                     override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
@@ -248,7 +257,11 @@ internal fun StudioWebView(
                         return true
                     }
                 }
-                loadUrl(STUDIO_PAGE)
+                addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+                    if (bottom - top != oldBottom - oldTop) fitStudioViewport(this)
+                }
+                // Let the WebView establish its native viewport before computing CSS heights.
+                doOnLayout { loadUrl(STUDIO_PAGE) }
             }
         },
         onRelease = { view ->
@@ -267,6 +280,15 @@ internal fun StudioWebView(
             Button(onClick = reload) { Text(stringResource(R.string.kuan_refresh)) }
         }
     }
+}
+
+private fun fitStudioViewport(view: WebView) {
+    if (view.url != STUDIO_PAGE || view.height <= 0) return
+    // This host owns the insets. CSS dynamic viewport units can use a stale layout viewport.
+    val height = view.height / view.resources.displayMetrics.density
+    view.evaluateJavascript(
+        "document.documentElement.style.setProperty('--kuan-studio-height', '${height}px')", null,
+    )
 }
 
 private class StudioRuntime(

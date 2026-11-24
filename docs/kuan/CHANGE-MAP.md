@@ -1,6 +1,6 @@
 # 宽 API 原生候选：改动地图
 
-日期：2026-11-23（北京时间）。以当前候选源为准，独立于任何 Codex 对话。应用内不放维护说明。基准提交 `2435dbdf4690fe26d424b8d1ab778bcde9c6cd75`。
+日期：2026-11-24（北京时间）。以 2.0.3 源码为准。应用内不放维护说明。基准提交 `2435dbdf4690fe26d424b8d1ab778bcde9c6cd75`。
 
 | 编号 | 目的与精确位置 | 依赖、撤销及验收 |
 | --- | --- | --- |
@@ -18,7 +18,8 @@
 | F02 | `data/kuan/KuanFiles.kt::{kuanFileLink,save,cached}`、`ui/components/richtext/KuanFileLinks.kt`、`RouteActivity.kt` 的链接处理。 | 识别自有域下载地址和人工可下载附件，旧 HTTP 链接归到固定 HTTPS 源。下载保留文件名和字节，系统应用从临时授权 URI 打开，另存在系统文件页。回退可移除对应链接入口，`KuanHistory` 继续复用文件仓储及账号云备份。 |
 | A03 | `KuanOperations.kt::{webAccounts,setWebAccount,billing,savePrice}` 与 `ui/pages/setting/KuanAdminTools.kt` 接入网页账号调度、模型及推理档费率和最低金额。 | 先读服务端版本再按当前 revision 提交，UI 操作可从账号页独立撤回。默认费率保留，其他模型和档位记录随原策略提交。分组管理和原生 Dashboard 分别使用各自接口。 |
 | M03 | `KuanCatalog.kt` 取实时推理档，`Assistant.kt`、`ConversationConfig.kt` 保存选值，`ChatInput.kt` 和 `ReasoningPicker.kt::ManagedReasoningButton` 复用上游滑块，`KuanProvider.kt::streamText` 传原始 effort。 | 目录缺档时发送路由使用服务端默认，切模型清理不适用的快照。移除此项可先恢复原滑块绑定，随后拆序列化字段与 wire 参数；保留本机旧档案可读。 |
-| P01 | `tools/kuan-presentation`、`data/kuan/KuanPresentation.kt`、`ChatRequestFactory.kt` 与 `ChatService.kt::restoreKuanJob` 以受限解析器把富输出投影为 Markdown 与题目数据。 `ChatMessage.kt`、`KuanFollowUps.kt`、`ChatList.kt` 和 `ChatPage.kt` 用原生输入控件呈现真实题干与选项并追加草稿。 | 如需独立撤回，要一起拆流式和结束时的投影及 UI 回调；历史回复中的元数据留作兼容读取。解析器只解释声明式字段，副作用交给原聊天发送，用户仍可直接写文字。 |
+| P01 | `tools/kuan-presentation`、`KuanPresentation.kt`、`ChatRequestFactory.kt`、`restoreKuanJob` 和 `KuanHistory.kt` 统一托管富输出与经典导入。 `KuanProvider.kt::KuanNativeReply` 接网页 Markdown 快照与引用。 `ChatMessage.kt` 和 `KuanFollowUps.kt` 呈现原题与折叠来源；`ChatPage.kt` / `ChatInputState.kt` 处理明确点击后的发送或追加。 | 仅解析声明式数据。引用 Markdown 保留在历史文本元数据，需回退时保留读历史兼容，不做数据库清理。测试两种协议、重新领取、快照重复与尾字、独立题目、草稿与附件、同域原文件链接。 |
+| I01 | `KuanStudioPage.kt::fitStudioViewport` 把原生测量高度交给本地工作台；`tools/kuan-studio/src/main.jsx` 和 `studio.css` 负责单栏手机编辑、双栏宽屏和常驻生成按钮。源构建后同步至 `app/src/main/assets/kuan-studio/`。 | 工作台沿用分组和图像接口，独立旧媒体页不恢复。要替换布局则同时验证手机、短横屏、键盘、宽屏、参考图和相册，不能只测网页预览。 |
 | V01 | `app/src/test/.../data/kuan/KuanContractsTest.kt`：动态目录、群组身份、附件序列化、流结束、更新源校验。 | 源码断言不等于真实账号、安装或支付验收。按交付验收表追加设备与服务器隔离试验，不用现网改数据凑结果。 |
 | V02 | `app/src/androidTest/.../data/kuan/{KuanNativeContractTest,KuanFollowUpsTest}.kt` 和 `tools/kuan-presentation/presentation.test.mjs`。 | 以合成账号核对分组密钥、原件、回执、重复导入和实际 Compose 交互。脚本覆盖前后链接、源码、公式、多题和手填输入。 |
 | B02 | `QuickStartCard.kt`、`QuickStartComponents.kt`：首卡主入口是宽 API 账号；下方「自定义」直达原快速入门。 `kuan_logo.png`、`ic_launcher.xml`、`kuan_launcher_foreground.xml`、`SettingAboutPage.kt` 和 `ConversationExport.kt` 复用经典版原图与原生控件。 | 回退入口和图标不需要数据迁移。保留 RikkaHub 原快速入门页、设置页和版权链接。 |

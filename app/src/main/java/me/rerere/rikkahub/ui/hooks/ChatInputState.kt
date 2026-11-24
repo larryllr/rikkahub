@@ -6,11 +6,13 @@ import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
 import me.rerere.ai.ui.UIMessagePart
 import kotlin.uuid.Uuid
 
 class ChatInputState {
     val textContent = TextFieldState()
+    val focusRequester = FocusRequester()
     var messageContent by mutableStateOf(listOf<UIMessagePart>())
     var editingMessage by mutableStateOf<Uuid?>(null)
 
@@ -44,6 +46,16 @@ class ChatInputState {
             else -> current + "\n" + content
         }
         textContent.setTextAndPlaceCursorAtEnd(text)
+    }
+
+    internal fun answerFollowUp(prompt: String, canSend: Boolean, send: (String) -> Unit): Boolean {
+        if (prompt.isBlank() || isEditing()) return false
+        if (canSend && isEmpty()) {
+            send(prompt)
+            return false
+        }
+        appendText(prompt)
+        return true
     }
 
     fun setContents(contents: List<UIMessagePart>) {

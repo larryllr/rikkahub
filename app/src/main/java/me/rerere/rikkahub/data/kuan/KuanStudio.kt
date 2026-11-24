@@ -7,7 +7,11 @@ import java.io.File
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -16,6 +20,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.provider.ModelType
 import me.rerere.common.http.await
+import okhttp3.Call
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
@@ -97,7 +102,7 @@ internal class KuanStudio(
             request.path, "POST", key, request.body.toString().toRequestBody(KuanApi.JSON_TYPE),
             headers = mapOf("X-KuanAPI-Request-Normalized" to "1"),
         )
-        val responseData = imageClient.newCall(raw).await().use { response ->
+        val responseData = imageClient.newCall(raw).readStudioResponse { response ->
             when {
                 !response.isSuccessful -> {
                     val source = response.body.source()
@@ -179,7 +184,7 @@ internal class KuanStudio(
     }
 
     private suspend fun fetchImage(target: HttpUrl): StudioImage =
-        api.client.newCall(imageGet(target)).await().use { response ->
+        api.client.newCall(imageGet(target)).readStudioResponse { response ->
             if (!response.isSuccessful) throw KuanHttpError(response.code)
             val type = validatedImageType(response)
                 ?: throw KuanProtocolError("下载内容不是图片")
@@ -230,6 +235,22 @@ internal class KuanStudio(
         val destination = File(directory, UUID.randomUUID().toString().replace("-", "") + "." + ext)
         check(temporary.renameTo(destination)) { "Could not save the image" }
         return StudioImage(destination, mime)
+    }
+}
+
+private suspend fun <T> Call.readStudioResponse(read: suspend (Response) -> T): T = coroutineScope {
+    // Keep cancellation attached to the call until the response body is consumed.
+    val abort = launch(start = CoroutineStart.UNDISPATCHED) {
+        try {
+            awaitCancellation()
+        } finally {
+            this@readStudioResponse.cancel()
+        }
+    }
+    try {
+        await().use { read(it) }
+    } finally {
+        abort.cancel()
     }
 }
 

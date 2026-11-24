@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipEntry
@@ -27,9 +28,11 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.BackgroundTarget
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.providers.openai.OpenAIWire
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.StreamChunkHandler
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -38,6 +41,7 @@ import me.rerere.rikkahub.data.files.saveUploadFromBytes
 import me.rerere.rikkahub.service.ChatService
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
@@ -54,6 +58,27 @@ import org.koin.core.context.GlobalContext
 
 @RunWith(AndroidJUnit4::class)
 class KuanNativeContractTest {
+    @Test
+    fun responsesReplyUsesTheSamePresentationAsChatCompletions() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val decoder = KuanStreamDecoder(OpenAIWire(OkHttpClient()), responses = true)
+        val handler = StreamChunkHandler()
+        val events = decoder.accept(
+            """{"type":"response.output_text.delta","item_id":"work","content_index":0,"delta":${JsonPrimitive(Fixture().finalReply)}}""",
+        ) + decoder.accept(
+            """{"type":"response.completed","response":{"id":"work-reply","status":"completed","output":[]}}""",
+        ) + decoder.accept("[DONE]")
+        val raw = events.fold(UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())) { message, chunk ->
+            handler.handle(listOf(message), chunk).single()
+        }
+        val finished = finishKuanPresentation(context, raw)
+        val text = finished.parts.filterIsInstance<UIMessagePart.Text>().single()
+        assertEquals("Final answer", text.text)
+        assertEquals("Use A", text.kuanFormGroups().single().array("buttons")!!.single().asObject().string("prompt"))
+        assertEquals(1, finished.annotations.size)
+        assertTrue(decoder.terminated)
+    }
+
     @Test
     fun groupedChatReplaysTheSameJobAndImportsLegacyOriginalsOnce() = runBlocking {
         withTimeout(90000) {
@@ -113,7 +138,7 @@ class KuanNativeContractTest {
                 val rendered = mutableListOf<StreamChunk>()
                 provider.streamText(web, listOf(earlier, follow), params).collect { rendered += it }
                 assertTrue(rendered.any { it is StreamChunk.ServerToolStart && it.toolName == "kuan_background" })
-                assertEquals("Draft discardedFinal answer", rendered.filterIsInstance<StreamChunk.TextDelta>().joinToString("") { it.text })
+                assertEquals("Draft discarded" + fixture.finalReply, rendered.filterIsInstance<StreamChunk.TextDelta>().joinToString("") { it.text })
                 assertTrue(StreamChunk.ResetAttempt in rendered)
                 assertEquals(1, fixture.submits.get())
                 val created = checkNotNull(fixture.created)
@@ -137,7 +162,11 @@ class KuanNativeContractTest {
                         handler = StreamChunkHandler(selected)
                     } else replyState = handler.handle(listOf(replyState), event).single()
                 }
-                assertEquals("Final answer", replyState.parts.filterIsInstance<UIMessagePart.Text>().joinToString("") { it.text })
+                val projected = finishKuanPresentation(context, replyState)
+                val answer = projected.parts.filterIsInstance<UIMessagePart.Text>().single()
+                assertEquals("Final answer", answer.text)
+                assertEquals("Pick a file", answer.kuanFormGroups().single().string("question"))
+                assertEquals("https://example.com/file", (projected.annotations.single() as UIMessageAnnotation.UrlCitation).url)
                 assertEquals(1, fixture.submits.get())
                 reopened.acknowledge(conversation, reply)
                 assertEquals(1, fixture.receipts.get())
@@ -162,6 +191,13 @@ class KuanNativeContractTest {
                 val duplicate = history.import(archive.toUri())
                 assertEquals(KuanHistoryResult(1, 2, 0, 0), first)
                 assertEquals(KuanHistoryResult(0, 0, 1, 0), duplicate)
+                val importedId = Uuid.parse(UUID.nameUUIDFromBytes(
+                    "kuan-history/${profile.scope}/conversation/$legacyId".encodeToByteArray(),
+                ).toString())
+                val imported = checkNotNull(chat.getConversation(importedId)).currentMessages.last()
+                assertEquals(MessageRole.ASSISTANT, imported.role)
+                assertEquals(1, imported.annotations.size)
+                assertEquals("Pick a file", (imported.parts.single() as UIMessagePart.Text).kuanFormGroups().single().string("question"))
                 session.signOut()
                 assertNull(session.state.value.profile)
                 assertTrue(session.state.value.ownerBound)
@@ -317,7 +353,7 @@ class KuanNativeContractTest {
                         val events = listOf(
                             event(1, delta("Draft discarded")),
                             event(2, """{"type":"kuan.response.reset"}"""),
-                            event(3, delta("Final answer")),
+                            event(3, delta(finalReply)),
                             event(4, """{"id":"fixture","choices":[{"delta":{},"finish_reason":"stop"}]}"""),
                         )
                         ok(req, receipt(job, "completed", 4, events.drop(cursor)).toString())
@@ -363,6 +399,14 @@ class KuanNativeContractTest {
                 .header("Content-Type", mime).apply { disposition?.let { header("Content-Disposition", it) } }
                 .body(body.toResponseBody(mime.toMediaType())).build()
 
+        val finalReply = """Final answer
+
+            |<box><title>Pick a file</title><button onClick={()=>GenUI.issueNewTurn("Use A")}>File A</button></box>
+            |
+            |### Sources
+            |- [File](https://example.com/file)
+        """.trimMargin().trimEnd()
+
         fun writeArchive(path: File, owner: Long, conversation: String) {
             val manifest = buildJsonObject {
                 put("ownerId", owner.toString())
@@ -376,7 +420,7 @@ class KuanNativeContractTest {
                         put("messages", KuanJson.parseToJsonElement("""[
                             {"id":"m1","role":"user","content":"Retain the code","createdAt":1000,
                               "attachments":[{"assetId":"a1","name":"source.py","type":"text/x-python"}]},
-                            {"id":"m2","role":"assistant","content":"I kept the code","createdAt":2000}
+                            {"id":"m2","role":"assistant","content":${JsonPrimitive(finalReply)},"createdAt":2000}
                         ]"""))
                     })
                 })

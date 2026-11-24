@@ -795,22 +795,40 @@ export function mapKuanRichProse(value, transform) {
 }
 
 export function splitKuanRichCitationSection(value) {
-  const masked = maskCode(String(value || ''));
+  const original = String(value || '');
+  const masked = maskCode(original, false);
   const source = masked.masked;
-  const header = /(?:^|\n)[ \t]*(?:#{1,6}[ \t]*)?(?:来源|参考来源|参考资料|sources?|references?)[：:]?[ \t]*\r?\n/giu;
+  const header = /(?:^|\n)[ \t]{0,3}(?:#{1,6}[ \t]+)?(?:\*\*|__)?(?:来源|参考来源|参考资料|引用来源|sources?|references?|citations?)[：:]?(?:\*\*|__)?[：:]?[ \t]*(?:#+[ \t]*)?\r?\n(?:[ \t]*\r?\n)?/giu;
+  const entry = /^[ \t]{0,3}(?:[-*+]|\d+[.)])[ \t]+\[((?:\\.|[^\]\\\r\n]){1,500})\]\((?:<(https?:\/\/[^<>\s]+)>|(https?:\/\/[^\s<>]+?))(?:[ \t]+"[^"\r\n]*")?\)[ \t]*\r?(?:\n|$)$/iu;
+  const ranges = [], links = [], blocks = [];
   for (const match of source.matchAll(header)) {
     const start = match.index + match[0].length;
     let end = start;
+    const at = links.length;
     const lines = /[^\n]*(?:\n|$)/gu;
     lines.lastIndex = start;
     for (let line; (line = lines.exec(source)) && line[0];) {
-      if (!/^[ \t]*(?:[-*]|\d+[.)])[ \t]+\[[^\]\r\n]+\]\(https?:\/\/[^\r\n]+\)[ \t]*\r?(?:\n|$)$/iu.test(line[0])) break;
+      const link = entry.exec(line[0]);
+      if (!link || links.length >= 128) break;
+      const url = link[2] || link[3];
+      if (url.includes('\\') || url.includes('\uE100')) break;
+      // Reject an incomplete Markdown destination while the reply is streaming.
+      let depth = 0;
+      if (!link[2] && [...url].some(char => char === '(' ? (++depth, false) : char === ')' && --depth < 0) || depth !== 0) break;
+      links.push({ title: masked.restore(link[1]).replace(/\\([\[\]\\])/gu, '$1'), url });
       end = lines.lastIndex;
     }
-    if (end === start) continue;
-    const before = source.slice(0, match.index).trimEnd(), after = source.slice(end).trimStart();
-    return { body: masked.restore([before, after].filter(Boolean).join('\n\n')),
-      sources: masked.restore(source.slice(start, end).trim()) };
+    if (links.length === at) continue;
+    ranges.push([match.index, end]);
+    blocks.push(masked.restore(source.slice(start, end).trim()));
   }
-  return { body: String(value || ''), sources: '' };
+  if (!ranges.length) return { body: original, sources: '', links };
+  const prose = [];
+  let cursor = 0;
+  for (const [start, end] of ranges) {
+    prose.push(source.slice(cursor, start).trimEnd().replace(/^(?:[ \t]*\r?\n)+/u, ''));
+    cursor = end;
+  }
+  prose.push(source.slice(cursor).replace(/^(?:[ \t]*\r?\n)+/u, ''));
+  return { body: masked.restore(prose.filter(Boolean).join('\n\n')), sources: blocks.join('\n\n'), links };
 }

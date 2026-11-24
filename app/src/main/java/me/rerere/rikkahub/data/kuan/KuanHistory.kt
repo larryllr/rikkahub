@@ -118,7 +118,10 @@ internal class KuanHistory(
                 if (parts.isNotEmpty()) {
                     val imported = UIMessage(id = messageId, role = message.role, parts = parts,
                         createdAt = time, finishedAt = time)
-                    nodes += MessageNode(id = legacyId(id.toString(), "node", message.id), messages = listOf(imported))
+                    nodes += MessageNode(
+                        id = legacyId(id.toString(), "node", message.id),
+                        messages = listOf(finishKuanPresentation(context, imported)),
+                    )
                 }
             }
             if (nodes.isEmpty()) {

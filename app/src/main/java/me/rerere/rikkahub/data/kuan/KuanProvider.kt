@@ -33,6 +33,7 @@ import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.StreamChunkHandler
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.finishReasoning
 import okhttp3.Request
@@ -175,6 +176,7 @@ internal class KuanProvider(
 
 internal class KuanStreamDecoder(wire: OpenAIWire, private val responses: Boolean) {
     private val parser = wire.streamDecoder(responses)
+    private val nativeReply = KuanNativeReply()
     private var hasFinish = false
     private var imageId = 0
     var terminated = false
@@ -185,7 +187,8 @@ internal class KuanStreamDecoder(wire: OpenAIWire, private val responses: Boolea
         if (data == "[DONE]") {
             if (!hasFinish) throw KuanProtocolError("The response ended without a completion reason")
             terminated = true
-            return parser.accept(SseEvent(id = id, event = type, data = data)).chunks
+            val finalChunks = parser.accept(SseEvent(id = id, event = type, data = data)).chunks
+            return nativeReply.finish(finalChunks)
         }
         val row = runCatching { KuanJson.parseToJsonElement(data) as? JsonObject }.getOrNull()
             ?: throw KuanProtocolError("Invalid event in the Kuan API stream")
@@ -213,7 +216,52 @@ internal class KuanStreamDecoder(wire: OpenAIWire, private val responses: Boolea
             return accept(JsonObject(row + ("type" to JsonPrimitive("response.completed"))).toString(), id, type)
         }
         if (responses && event in setOf("response.completed", "response.incomplete")) hasFinish = true
-        if (!responses && (row.array("choices")?.firstOrNull() as? JsonObject)?.string("finish_reason") != null) hasFinish = true
+        if (!responses) {
+            val choice = row.array("choices")?.firstOrNull() as? JsonObject
+            if (choice?.string("finish_reason") != null) hasFinish = true
+            choice?.obj("delta")?.let { nativeReply.accept(row.string("message_id"), it) }
+        }
         return parser.accept(SseEvent(id = id, event = type, data = data)).chunks
     }
+}
+
+private class KuanNativeReply {
+    private var messageId: String? = null
+    private var markdown: Pair<String, String>? = null
+    private var sources: Pair<String, List<UIMessageAnnotation.UrlCitation>>? = null
+
+    fun accept(id: String?, delta: JsonObject) {
+        if (!delta.string("content").isNullOrEmpty() && id != null) messageId = id
+        delta.obj("kuan_native_markdown")?.let { snapshot ->
+            if (snapshot.string("source") != "chatgpt" || snapshot.string("format") != "text/markdown") return@let
+            val key = snapshot.replyId() ?: return@let
+            val text = snapshot.string("text")?.takeIf { it.length in 1..MAX_PRESENTATION } ?: return@let
+            markdown = key to text
+        }
+        delta.obj("kuan_native_presentation")?.let { snapshot ->
+            if (snapshot.string("source") != "chatgpt" || snapshot.int("version") != 1) return@let
+            val key = snapshot.replyId() ?: return@let
+            val references = snapshot.array("components").orEmpty().asSequence().take(96)
+                .filterIsInstance<JsonObject>().filter { it.string("kind") == "Cite" }
+                .flatMap { it.array("sources").orEmpty().asSequence().take(32) }
+                .mapNotNull { readKuanCitation(it, native = true) }.distinctBy { it.url }.take(128).toList()
+            sources = key to references
+        }
+    }
+
+    fun finish(chunks: List<StreamChunk>): List<StreamChunk> = buildList {
+        val snapshot = markdown?.takeIf { messageId == null || it.first == messageId }?.second
+        if (snapshot != null) {
+            // Use a metadata-only event so the regular text stream is never concatenated with a snapshot.
+            val id = "kuan-terminal-presentation"
+            add(StreamChunk.TextStart(id, buildJsonObject { put(KUAN_NATIVE_MARKDOWN, snapshot) }))
+            add(StreamChunk.TextEnd(id))
+        }
+        sources?.takeIf { messageId == null || it.first == messageId }?.second?.takeIf { it.isNotEmpty() }?.let {
+            add(StreamChunk.Annotations(it))
+        }
+        addAll(chunks)
+    }
+
+    private fun JsonObject.replyId() = string("message_id")?.takeIf { it.length in 1..128 }
 }

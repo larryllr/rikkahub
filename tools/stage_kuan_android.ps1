@@ -6,8 +6,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $stageRoot = [IO.Path]::GetFullPath($Stage)
-$version = '2.0.2'
-$code = 5
+$version = '2.0.3'
+$code = 6
 $package = 'com.kuanapi.app.nativepreview'
 $origin = 'https://kuanapi.kuankuan.de5.net/downloads/mobile-native'
 $certificate = '184f05de36ac9a6e5807f26bef7f848f1b65f849058d461b234da42c4e7ecf59'
@@ -49,6 +49,15 @@ $downloads = foreach ($abi in 'arm64-v8a','x86_64') {
                 }
             } finally { $stream.Dispose() }
         }
+        $presentation = $zip.GetEntry('assets/kuan-presentation.js')
+        if (!$presentation) { throw "Missing reply presentation in $abi APK" }
+        $stream = $presentation.Open()
+        try {
+            if ((Get-FileHash -InputStream $stream).Hash -ne
+                (Get-FileHash -LiteralPath (Join-Path $repo 'app/src/main/assets/kuan-presentation.js')).Hash) {
+                throw "Stale reply presentation in $abi APK"
+            }
+        } finally { $stream.Dispose() }
     } finally { $zip.Dispose() }
     $bytes = (Get-Item -LiteralPath $apk).Length
     [ordered]@{
@@ -75,7 +84,7 @@ $hashes | Set-Content -Encoding ascii -LiteralPath (Join-Path $release 'SHA256SU
     version = $version
     versionCode = $code
     publishedAt = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
-    changelog = 'The original image button and shortcut now open Kuan API Image Studio. The previous media workspace is retired. App screens and share text use Kuan API branding.'
+    changelog = 'Image Studio fits the full Android workspace. Chat restores interactive follow-ups and collapsible sources, including recovered replies and imported history.'
     downloads = @($downloads)
 } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM -LiteralPath (Join-Path $channel 'latest.json')
 $hashes

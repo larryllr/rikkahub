@@ -356,23 +356,23 @@ class ChatService internal constructor(
                         modelId = model.id, parts = emptyList())
                     var message = base
                     var handler = StreamChunkHandler(model)
-                    var presentation = if (record.protocol == "chat_completions") KuanPresentationPreview(context) else null
+                    var presentation = KuanPresentationPreview(context)
                     session.replyMessageId.value = record.message
                     kuanJobs.events(record).collect { event ->
                         if (event == StreamChunk.ResetAttempt) {
                             handler = StreamChunkHandler(model)
                             message = base
-                            presentation = presentation?.let { KuanPresentationPreview(context) }
+                            presentation = KuanPresentationPreview(context)
                         } else {
                             message = handler.handle(listOf(message), event).single()
                         }
-                        val visible = presentation?.render(message) ?: message
+                        val visible = presentation.render(message)
                         session.update { latest ->
                             if (!latest.canAttach(record)) throw KuanProtocolError("Conversation branch changed during recovery")
                             latest.upsertMessage(record.node, visible)
                         }
                     }
-                    val completed = if (record.protocol == "chat_completions") finishKuanPresentation(context, message) else message
+                    val completed = finishKuanPresentation(context, message)
                     val finished = filesManager.convertBase64ImagePartToLocalFile(completed).copy(
                         finishedAt = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()),
                     )

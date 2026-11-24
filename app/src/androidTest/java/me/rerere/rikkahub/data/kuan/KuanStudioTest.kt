@@ -11,12 +11,19 @@ import android.graphics.Bitmap
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Base64
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -32,7 +39,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.ui.pages.mediacreation.StudioWebView
+import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.context.Navigator
+import me.rerere.rikkahub.ui.pages.mediacreation.KuanStudioPage
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Protocol
@@ -54,10 +63,12 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class KuanStudioTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    private lateinit var studioActivity: ComponentActivity
 
     @Test
     fun workbenchLoadsFallbackCasesAndGeneratesEditsCancelsAndExports() {
         val activity = compose.activity
+        studioActivity = activity
         val slot = File.createTempFile("studio-test", ".tmp", activity.cacheDir)
         check(slot.delete() && slot.mkdir())
         val isolated = object : ContextWrapper(activity) {
@@ -81,11 +92,21 @@ class KuanStudioTest {
                 requireNotNull(session.state.value.profile)
             }
         }
-        val studio = KuanStudio(isolated, session, catalog, api, profile.scope, session.state.value.epoch, group)
+        val studio = KuanStudio(activity, session, catalog, api, profile.scope, session.state.value.epoch, group)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val exported = mutableListOf<android.net.Uri>()
         try {
-            compose.setContent { StudioWebView(studio, profile.scope, {}, {}) }
+            compose.runOnUiThread {
+                activity.enableEdgeToEdge()
+                activity.window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            }
+            compose.setContent {
+                MaterialTheme {
+                    CompositionLocalProvider(LocalNavController provides Navigator(mutableListOf())) {
+                        KuanStudioPage(session, catalog, api)
+                    }
+                }
+            }
             eventually("bundled case data and pinned fallback image") {
                 js("Boolean(document.querySelector('.kw-card-image img')?.naturalWidth)") == "true"
             }
@@ -101,12 +122,42 @@ class KuanStudioTest {
             }
             js("document.querySelector('.kw-inspector header button').click()")
 
-            js("document.querySelector('.kw-mobile-composer').click()")
+            val narrow = js("matchMedia('(max-width:700px)').matches") == "true"
+            val closed = geometry()
+            assertViewport(closed)
+            assertTrue("Native toolbar is one row: $closed", closed.getDouble("header") in 44.0..60.0)
+            capture("gallery", closed)
+            if (narrow) {
+                openEditor()
+                assertEditorFits()
+                capture("editor", geometry())
+                if (js("innerWidth < innerHeight") == "true") {
+                    val full = geometry().getDouble("viewport")
+                    tapPrompt(instrumentation)
+                    eventually("real soft keyboard shrinks the native viewport") {
+                        imeVisible() && geometry().getDouble("viewport") < full - 60
+                    }
+                    assertEditorFits()
+                    capture("keyboard", geometry())
+                    compose.runOnUiThread {
+                        activity.getSystemService(InputMethodManager::class.java)
+                            .hideSoftInputFromWindow(activity.window.decorView.windowToken, 0)
+                    }
+                    eventually("keyboard dismissed and workbench resized") {
+                        !imeVisible() && geometry().getDouble("viewport") >= full - 1
+                    }
+                }
+            } else {
+                assertTrue("Wide layout retains editor and gallery side by side: $closed",
+                    closed.getDouble("gallery") > 0 && closed.getDouble("editor") >= closed.getDouble("layout") - 1)
+            }
             prompt("First test image")
             js("document.querySelector('.kw-composer .kw-generate').click()")
             eventually("generated result with original image") {
                 js("Boolean(document.querySelector('.kw-task.completed img')?.naturalWidth)") == "true"
             }
+            assertTrue("Result gallery fills the space again: ${geometry()}", geometry().optDouble("gallery") > 0)
+            capture("result", geometry())
             assertEquals(listOf("/v1/images/generations"), fixture.waterfall.toList())
 
             val firstUrl = js("document.querySelector('.kw-task.completed img').src").removeSurrounding("\"")
@@ -127,6 +178,7 @@ class KuanStudioTest {
                 Instrumentation.ActivityResult(Activity.RESULT_OK,
                     Intent().setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)), true)
             try {
+                if (narrow) openEditor()
                 js("document.querySelector('.kw-ref-add').click()")
                 eventually("system file chooser returned a reference") {
                     js("Boolean(document.querySelector('.kw-refs img')?.naturalWidth)") == "true"
@@ -142,12 +194,21 @@ class KuanStudioTest {
             }
             assertEquals("/v1/images/edits", fixture.waterfall.last())
 
+            if (narrow) openEditor()
             prompt("Stop this image")
             js("document.querySelector('.kw-composer .kw-generate').click()")
             eventually("generating indicator") { js("Boolean(document.querySelector('.kw-generating'))") == "true" }
-            js("document.querySelector('.kw-task.generating header button').click()")
+            assertTrue("The image request reached the test provider", fixture.stopStarted.await(5, TimeUnit.SECONDS))
+            assertEquals("true", js("""(() => {
+                const stop = document.querySelector('.kw-task.generating header button');
+                if (!stop) return false;
+                stop.click();
+                return true;
+            })()"""))
             eventually("cancelled task") { js("Boolean(document.querySelector('.kw-task.cancelled'))") == "true" }
+            assertTrue("Stopping cancelled the image request", fixture.stopObserved.await(5, TimeUnit.SECONDS))
 
+            if (narrow) openEditor()
             prompt("Show upstream failure")
             js("document.querySelector('.kw-composer .kw-generate').click()")
             eventually("upstream error shown once, without credentials") {
@@ -176,6 +237,7 @@ class KuanStudioTest {
                 instrumentation.removeMonitor(writer)
             }
             val name = firstUrl.substringAfterLast('/')
+            assertNotNull(studio.result(name))
             runBlocking { session.signOut() }
             assertNull(studio.result(name))
         } catch (failure: AssertionError) {
@@ -184,6 +246,7 @@ class KuanStudioTest {
         } finally {
             exported.forEach { activity.contentResolver.delete(it, null, null) }
             activity.deleteSharedPreferences("kuan-studio-exports-${profile.scope}")
+            File(activity.filesDir, "kuan-studio/${profile.scope}").deleteRecursively()
             scope.cancel()
             slot.deleteRecursively()
         }
@@ -229,11 +292,93 @@ class KuanStudioTest {
         return null
     }
 
+    private fun openEditor() {
+        js("document.querySelector('.kw-mobile-composer').click()")
+        eventually("editor expanded") { js("Boolean(document.querySelector('.kw-composer.expanded'))") == "true" }
+    }
+
+    private fun geometry() = JSONObject(js("""(() => {
+        const rect = selector => document.querySelector(selector).getBoundingClientRect();
+        return { viewport: document.documentElement.clientHeight, root: rect('.kuan-image-workbench').height,
+            innerHeight, innerWidth, visible: visualViewport.height, scale: visualViewport.scale, dpr: devicePixelRatio,
+            header: rect('.kw-header').height, layout: rect('.kw-layout').height, editor: rect('.kw-composer').height,
+            gallery: rect('.kw-main').height, generate: rect('.kw-composer-footer .kw-generate').bottom,
+            scroll: document.documentElement.scrollHeight };
+    })()"""))
+
+    private fun assertViewport(bounds: JSONObject) {
+        val height = bounds.getDouble("viewport")
+        assertTrue("Root must match the native viewport: $bounds", kotlin.math.abs(bounds.getDouble("root") - height) <= 1)
+        assertTrue("The outer document does not scroll: $bounds", bounds.getDouble("scroll") <= height + 1)
+    }
+
+    private fun assertEditorFits() {
+        val bounds = geometry()
+        assertViewport(bounds)
+        assertEquals("Expanded editor must fill the workspace: $bounds", bounds.getDouble("layout"), bounds.getDouble("editor"), 1.0)
+        assertEquals("Gallery should not steal editor height: $bounds", 0.0, bounds.getDouble("gallery"), 0.0)
+        assertTrue("Generate stays within the viewport: $bounds", bounds.getDouble("generate") in 1.0..bounds.getDouble("viewport"))
+    }
+
+    private fun capture(state: String, geometry: JSONObject) {
+        if (InstrumentationRegistry.getArguments().getString("studioCapture") != "true") return
+        val instrument = InstrumentationRegistry.getInstrumentation()
+        val drawn = CountDownLatch(1)
+        compose.activityRule.scenario.onActivity { activity ->
+            val web = requireNotNull(activity.window.decorView.web())
+            web.postVisualStateCallback(0, object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    web.postOnAnimation { drawn.countDown() }
+                }
+            })
+            web.invalidate()
+        }
+        check(drawn.await(5, TimeUnit.SECONDS)) { "Image Studio did not draw" }
+        val folder = requireNotNull(compose.activity.getExternalFilesDir("studio-qa"))
+        val stem = "${geometry.getInt("innerWidth")}-$state"
+        File(folder, "$stem.json").writeText(geometry.toString())
+        val screenshot = requireNotNull(instrument.uiAutomation.takeScreenshot())
+        try {
+            File(folder, "$stem.png").outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        } finally {
+            screenshot.recycle()
+        }
+    }
+
+    private fun imeVisible(): Boolean {
+        var visible = false
+        compose.activityRule.scenario.onActivity {
+            visible = ViewCompat.getRootWindowInsets(it.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        }
+        return visible
+    }
+
+    private fun tapPrompt(instrumentation: Instrumentation) {
+        val point = JSONObject(js("""(() => {
+            const box = document.querySelector('.kw-prompt').getBoundingClientRect();
+            return { x: box.left + 32, y: box.top + 20, width: innerWidth };
+        })()"""))
+        var x = 0f
+        var y = 0f
+        compose.activityRule.scenario.onActivity { activity ->
+            val web = requireNotNull(activity.window.decorView.web())
+            val xy = IntArray(2).also { web.getLocationOnScreen(it) }
+            val scale = web.width / point.getDouble("width")
+            x = (xy[0] + point.getDouble("x") * scale).toFloat()
+            y = (xy[1] + point.getDouble("y") * scale).toFloat()
+        }
+        val time = SystemClock.uptimeMillis()
+        for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            val event = MotionEvent.obtain(time, SystemClock.uptimeMillis(), action, x, y, 0)
+            try { instrumentation.sendPointerSync(event) } finally { event.recycle() }
+        }
+    }
+
     private fun js(value: String): String {
         val done = CountDownLatch(1)
         var result = "null"
-        compose.activityRule.scenario.onActivity { activity ->
-            activity.window.decorView.web()?.evaluateJavascript(value) {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            studioActivity.window.decorView.web()?.evaluateJavascript(value) {
                 result = it ?: "null"
                 done.countDown()
             } ?: done.countDown()
@@ -252,6 +397,8 @@ class KuanStudioTest {
     private class Fixture : Interceptor {
         val waterfall = CopyOnWriteArrayList<String>()
         val fallbacks = CopyOnWriteArrayList<String>()
+        val stopStarted = CountDownLatch(1)
+        val stopObserved = CountDownLatch(1)
         private val owner = Random.nextLong(100_000_000, 2_000_000_000)
         val png = ByteArrayOutputStream().use { bytes ->
             Bitmap.createBitmap(71, 49, Bitmap.Config.ARGB_8888).apply {
@@ -307,7 +454,11 @@ class KuanStudioTest {
                         assertArrayEquals(png, Base64.decode(ref.substringAfter(','), Base64.DEFAULT))
                     }
                     if (prompt == "Stop this image") {
-                        repeat(70) { if (chain.call().isCanceled()) throw java.io.IOException("Cancelled"); Thread.sleep(40) }
+                        stopStarted.countDown()
+                        val deadline = SystemClock.elapsedRealtime() + 90_000
+                        while (!chain.call().isCanceled() && SystemClock.elapsedRealtime() < deadline) Thread.sleep(40)
+                        if (chain.call().isCanceled()) stopObserved.countDown()
+                        throw java.io.IOException("Fixture stopped or timed out")
                     }
                     if (prompt == "Show upstream failure") raw("""{"error":{"message":"Cannot generate with studio-fixture-key"}}""", 503)
                     else raw("""{"data":[{"b64_json":"${Base64.encodeToString(png, Base64.NO_WRAP)}"}]}""")

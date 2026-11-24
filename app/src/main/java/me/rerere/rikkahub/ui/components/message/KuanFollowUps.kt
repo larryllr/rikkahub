@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,7 +51,7 @@ import me.rerere.rikkahub.data.kuan.projectKuanPresentation
 import me.rerere.rikkahub.data.kuan.string
 
 @Composable
-internal fun KuanFollowUps(part: UIMessagePart.Text, onDraft: ((String) -> Unit)?) {
+internal fun KuanFollowUps(part: UIMessagePart.Text, onAnswer: ((String) -> Unit)?) {
     val source = remember(part.metadata) { part.kuanFormSource() } ?: return
     val groups = remember(part.metadata) { part.kuanFormGroups() }
     if (groups.isEmpty()) return
@@ -59,7 +60,8 @@ internal fun KuanFollowUps(part: UIMessagePart.Text, onDraft: ((String) -> Unit)
     val selections = remember(source) { mutableStateMapOf<String, JsonPrimitive>() }
     var resolving by remember(source) { mutableStateOf(false) }
     var unresolved by remember(source) { mutableStateOf(false) }
-    val enabled = onDraft != null && !resolving
+    val currentAnswer by rememberUpdatedState(onAnswer)
+    val enabled = onAnswer != null && !resolving
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -94,7 +96,7 @@ internal fun KuanFollowUps(part: UIMessagePart.Text, onDraft: ((String) -> Unit)
                         FilledTonalButton(
                             enabled = enabled,
                             onClick = {
-                                if (onDraft == null || resolving) return@FilledTonalButton
+                                if (currentAnswer == null || resolving) return@FilledTonalButton
                                 resolving = true
                                 unresolved = false
                                 val selected = JsonObject(selections.toMap())
@@ -106,7 +108,7 @@ internal fun KuanFollowUps(part: UIMessagePart.Text, onDraft: ((String) -> Unit)
                                                 ?.array("buttons").orEmpty().filterIsInstance<JsonObject>()
                                                 .firstOrNull { it.string("id") == actionId }?.string("prompt")
                                         }
-                                        if (prompt.isNullOrBlank()) unresolved = true else onDraft(prompt)
+                                        if (prompt.isNullOrBlank()) unresolved = true else currentAnswer?.invoke(prompt)
                                     } finally {
                                         resolving = false
                                     }

@@ -45,3 +45,50 @@ test('an initially empty real text field can produce a draft', () => {
   const selected = project(source, { [group.fields[0].key]: 'Shanghai' });
   assert.equal(selected.groups[0].buttons[0].prompt, 'Shanghai');
 });
+
+test('classic source lists fold independently while inline links and source code stay in the answer', () => {
+  const fence = '\u0060'.repeat(3);
+  const code = [fence + 'markdown', '### Sources', '- [Example](https://example.com/in-code)', fence].join('\n');
+  const paragraph = 'Read [the inline link](https://example.com/inline) and continue.';
+  const source = [paragraph, '', code, '', '### \u53c2\u8003\u8d44\u6599\uff1a',
+    '- [A \\[quoted\\] title](https://example.org/wiki/Part_(text) "Article")',
+    '2. [B](<https://example.net/path%20with%20space>)',
+    '', 'Text after the sources.', '', '**References:**', '', '- [C](https://example.com/c)',
+    'A final paragraph.'].join('\n');
+  const result = project(source, {}, false, true);
+  assert.deepEqual(result.links, [
+    { title: 'A [quoted] title', url: 'https://example.org/wiki/Part_(text)' },
+    { title: 'B', url: 'https://example.net/path%20with%20space' },
+    { title: 'C', url: 'https://example.com/c' },
+  ]);
+  assert.equal(result.text, [paragraph, code, 'Text after the sources.', 'A final paragraph.'].join('\n\n'));
+  assert.equal(result.history, source);
+  assert.equal(project(source, {}, true, true).text, source);
+});
+
+test('a normal list or incomplete source destination is not removed', () => {
+  for (const text of [
+    '- [Options](https://example.com/options)',
+    '### Sources\n- [Bad](https://example.com/unclosed(foo)',
+    '    Sources\n    - [Indented example](https://example.com/indented)',
+    '### Sources\n- [Not a series](https://example.com/page) describes an ordinary list item.',
+  ]) {
+    const result = project(text, {}, false, true);
+    assert.equal(result.text, text);
+    assert.deepEqual(result.links, []);
+  }
+});
+
+test('independent actions with identical local variable names keep their own question context', () => {
+  const form = (question, start, end, label) => '<box><title>' + question + '</title>'
+    + '{@body const [a,setA]=DIL.useState("' + start + '")}'
+    + '<select value={a} onChange={setA}><option>' + start + '</option><option>' + end + '</option></select>'
+    + '<button onClick={()=>GenUI.issueNewTurn(a)}>' + label + '</button></box>';
+  const input = form('Flavor?', 'Mint', 'Lemon', 'Choose flavor') + '\n\n' + form('Size?', 'Small', 'Large', 'Choose size');
+  const { groups } = project(input);
+  assert.deepEqual(groups.map(group => group.question), ['Flavor?', 'Size?']);
+  const [first, second] = groups.map(group => group.fields[0].key);
+  assert.notEqual(first, second);
+  const selected = project(input, { [first]: 'Lemon', [second]: 'Large' });
+  assert.deepEqual(selected.groups.map(group => group.buttons[0].prompt), ['Lemon', 'Large']);
+});
