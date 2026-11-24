@@ -22,7 +22,9 @@ $release = Join-Path $channel $version
 New-Item -ItemType Directory -Path $release | Out-Null
 
 $downloads = foreach ($abi in 'arm64-v8a','x86_64') {
-    $apk = Join-Path $apkRoot "app-github-$abi-release.apk"
+    $name = "kuanapi-$version-$abi.apk"
+    $apk = Join-Path $release $name
+    Copy-Item -LiteralPath (Join-Path $apkRoot "app-github-$abi-release.apk") -Destination $apk
     $identity = (& (Join-Path $BuildTools 'aapt.exe') dump badging $apk) -join "`n"
     if ($LASTEXITCODE -ne 0 -or !$identity.Contains("name='$package' versionCode='$code' versionName='$version'") -or
         !$identity.Contains("native-code: '$abi'") -or !$identity.Contains("sdkVersion:'26'")) {
@@ -46,16 +48,13 @@ $downloads = foreach ($abi in 'arm64-v8a','x86_64') {
             } finally { $stream.Dispose() }
         }
     } finally { $zip.Dispose() }
-    $name = "kuanapi-$version-$abi.apk"
-    $target = Join-Path $release $name
-    Copy-Item -LiteralPath $apk -Destination $target
-    $bytes = (Get-Item -LiteralPath $target).Length
+    $bytes = (Get-Item -LiteralPath $apk).Length
     [ordered]@{
         name = $name
         url = "$origin/$version/$name"
         size = ("{0:0.0} MiB" -f ($bytes / 1MB))
         bytes = $bytes
-        sha256 = (Get-FileHash -LiteralPath $target).Hash.ToLowerInvariant()
+        sha256 = (Get-FileHash -LiteralPath $apk).Hash.ToLowerInvariant()
         abi = $abi
     }
 }
