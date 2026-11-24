@@ -23,6 +23,7 @@ internal data class KuanWebCard(
     val title: String,
     val link: String? = null,
     val images: List<KuanWebImage> = emptyList(),
+    val query: String? = null,
 )
 
 internal fun JsonObject.nativeWebCards(): List<KuanWebCard> {
@@ -39,7 +40,8 @@ internal fun JsonObject.nativeWebCards(): List<KuanWebCard> {
                             image.publicLabel("title").ifBlank { label },
                             publicKuanPresentationUrl(image.string("source_url")))
                     }.distinctBy { it.url }.toList()
-                if (images.isNotEmpty()) KuanWebCard(kind, label, images = images) else null
+                val query = component.string("query")?.takeIf { it.length in 1..1000 && it.none(Char::isISOControl) }
+                if (images.isNotEmpty()) KuanWebCard(kind, label, images = images, query = query) else null
             }
             in linkKinds -> {
                 val link = publicKuanPresentationUrl(component.string("url")) ?: component.array("sources")

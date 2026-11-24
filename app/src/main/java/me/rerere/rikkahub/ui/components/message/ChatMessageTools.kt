@@ -73,10 +73,13 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.DurationUnit
 
 @Composable
-fun ChainOfThoughtScope.ChatMessageServerToolStep(tool: UIMessagePart.ServerTool) {
+fun ChainOfThoughtScope.ChatMessageServerToolStep(tool: UIMessagePart.ServerTool, initiallyExpanded: Boolean = false) {
     val loading = !tool.isFinished
     val web = remember(tool) { tool.webSearchPresentation() }
-    ChainOfThoughtStep(
+    var expanded by remember(tool.toolCallId, initiallyExpanded) { mutableStateOf(initiallyExpanded) }
+    ControlledChainOfThoughtStep(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
         icon = {
             if (loading) {
                 DotLoading(size = 10.dp)

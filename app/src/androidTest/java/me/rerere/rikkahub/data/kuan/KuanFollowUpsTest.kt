@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,7 +20,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.ui.components.message.ChatMessageCitations
+import me.rerere.rikkahub.ui.components.message.ChatReplyActivity
 import me.rerere.rikkahub.ui.components.message.KuanFollowUps
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import org.junit.Assert.assertEquals
@@ -107,14 +108,14 @@ class KuanFollowUpsTest {
         assertEquals(finished, runBlocking { finishKuanPresentation(context, finished) })
         assertEquals(raw.copy(role = MessageRole.USER), runBlocking { finishKuanPresentation(context, raw.copy(role = MessageRole.USER)) })
 
-        compose.setContent { MaterialTheme { ChatMessageCitations(finished.annotations) } }
-        val toggle = compose.onNodeWithText(context.getString(R.string.citations_count, 2))
+        compose.setContent { MaterialTheme { ChatReplyActivity(emptyList(), finished.annotations) } }
+        val toggle = compose.onNodeWithContentDescription(context.getString(R.string.citations_count, 2))
         toggle.assertIsDisplayed()
         compose.onNodeWithText("1. Official guide").assertIsNotDisplayed()
         toggle.performClick()
         compose.onNodeWithText("1. Official guide").assertIsDisplayed()
         compose.onNodeWithText("2. Download code").assertIsDisplayed()
-        toggle.performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.kuan_reply_close_details)).performClick()
         compose.waitForIdle()
         compose.onNodeWithText("1. Official guide").assertIsNotDisplayed()
     }

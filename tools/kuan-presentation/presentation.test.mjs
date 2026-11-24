@@ -92,3 +92,43 @@ test('independent actions with identical local variable names keep their own que
   const selected = project(input, { [first]: 'Lemon', [second]: 'Large' });
   assert.deepEqual(selected.groups.map(group => group.buttons[0].prompt), ['Lemon', 'Large']);
 });
+
+test('rich media resolves at the exact tag or private-token position without a footer', () => {
+  const first = 'https://images.example.com/first.png';
+  const second = 'https://images.example.com/second.png';
+  const source = 'Opening.\n\n<AsyncImageGroup query={["site"]}/>\n\n### CUDA\n\nA section.\n\n'
+    + '\uE200image_group\uE202{"query":["chip","missing"]}\uE201\n\nConclusion.';
+  const images = [
+    { query: 'chip', url: second },
+    { query: 'site', url: first },
+    { query: 'unrelated', url: 'https://images.example.com/unused.png' },
+  ];
+  const result = project(source, {}, false, false, images);
+  assert.match(result.text, /Opening\.[\s\S]*first\.png[\s\S]*### CUDA[\s\S]*second\.png[\s\S]*Conclusion\.$/u);
+  assert.deepEqual(result.inlineImages, [first, second]);
+  assert.match(result.history, /Opening\.[\s\S]*CUDA[\s\S]*Conclusion\./u);
+  assert.doesNotMatch(result.history, /first\.png|second\.png|image_group/u);
+  assert.equal(project(source, {}, true).text.includes('AsyncImage'), false);
+  assert.equal(project(source, {}, true).text.includes('\u56fe\u7247'), false);
+});
+
+test('image instructions cannot invent a URL and Markdown examples remain byte-for-byte', () => {
+  const code = '\u0060'.repeat(3) + 'jsx\n<AsyncImage query="site" />\n' + '\u0060'.repeat(3);
+  const bare = '\u0060<AsyncImage query="site" />\u0060';
+  const source = code + '\n\n' + bare + '\n\n<AsyncImage query="site" />\n\nEnd.';
+  const result = project(source, {}, false, false, [{ query: 'site', url: 'javascript:alert(1)' }]);
+  assert.equal(result.text, code + '\n\n' + bare + '\n\nEnd.');
+  assert.deepEqual(result.inlineImages, []);
+});
+
+test('grid and grid-item lay out both pieces of prose without touching real code', () => {
+  const code = '\u0060'.repeat(3) + 'jsx\n<grid-item>Example code</grid-item>\n' + '\u0060'.repeat(3);
+  for (const grid of [
+    '<grid columns={2} gap={2}><grid-item>**Training**\n\nLearn patterns.</grid-item><grid-item>**Inference**\n\nUse patterns.</grid-item></grid>',
+    '&lt;grid columns={2}&gt;&lt;grid-item&gt;**Training**\n\nLearn patterns.&lt;/grid-item&gt;&lt;grid-item&gt;**Inference**\n\nUse patterns.&lt;/grid-item&gt;&lt;/grid&gt;',
+  ]) {
+    const result = project('Comparison\n\n' + grid + '\n\n' + code + '\n\nNext paragraph.');
+    assert.equal(result.text, 'Comparison\n\n**Training**\n\nLearn patterns.\n\n**Inference**\n\nUse patterns.\n\n' + code + '\n\nNext paragraph.');
+    assert.equal(project(grid, {}, true).text, result.text.split(code)[0].replace('Comparison\n\n', '').trimEnd());
+  }
+});

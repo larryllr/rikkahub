@@ -47,11 +47,12 @@ function escapePresentationHTML(value) {
 
 // Resolve only declarative upstream data. Match by the exact image query,
 // never synthesize an image URL or execute compiled component handlers.
-function resolveRichPresentation(value, presentation, streaming, history = false) {
+function resolveRichPresentation(value, presentation, streaming, history = false, nativeImage = null) {
   const components = validateKuanNativePresentation(presentation)?.components || [];
   const code = maskCode(String(value || ''), false);
   const occurrences = new Map();
   const imageMarkup = query => {
+    if (nativeImage) return nativeImage(query);
     const component = components.find(item => ['AsyncImage', 'AsyncImageGroup', 'Image'].includes(item.kind) && item.query === query);
     if (!component?.images?.length) {
       if (history) return '';
@@ -69,7 +70,7 @@ function resolveRichPresentation(value, presentation, streaming, history = false
       return '\n\n<figure class="kuan-native-media" data-media-key="' + key + '" data-media-signature="' + signature + '" data-media-state="loading"><a href="' + escapePresentationHTML(image.url) + '" target="_blank" rel="noopener noreferrer"><img src="' + escapePresentationHTML(image.thumbnail || image.url) + '" alt="' + title + '" loading="lazy" decoding="async" referrerpolicy="no-referrer" width="360" height="240"><span class="kuan-native-media-error" role="status">图片未能加载，可打开原图</span></a><figcaption>' + title + source + '</figcaption></figure>\n\n';
     }).join('');
   };
-  const input = code.masked;
+  const input = nativeImage ? decodeLiteralUnicodeEscapes(code.masked) : code.masked;
   let output = '', cursor = 0;
   for (const match of input.matchAll(/<(AsyncImageGroup|AsyncImage|Image|Cite|Entity|Link|Map|Chart)\b/gu)) {
     const start = match.index;
@@ -456,11 +457,13 @@ function turnExpression(handler) {
 
 const RICH_TITLE_TAG = '(?:title|subtitle|heading|subheading|header)';
 const RICH_MATH_TAG = '(?:formula|equation|math|mathml|math-block)';
+const RICH_GRID_TAG = /^(?:grid|grid-item)$/iu;
 
 function richMarkupText(value) {
   const source = stripPrivateRichReferences(String(value || ''))
     // Some bridges HTML-escape the protocol before it reaches the client.
     .replace(/&lt;(\/?)(title|subtitle|heading|subheading|header)\b([^&]*?)&gt;/giu, '<$1$2$3>')
+    .replace(/&lt;(\/?)(grid(?:-item)?)(?=[\s/&])([^&]*?)&gt;/giu, '<$1$2$3>')
     .replace(/&lt;\/(title|subtitle|heading|subheading|header)\s*&gt;/giu, '</$1>');
   const titles = /^(?:title|subtitle|heading|subheading|header)$/iu;
   const wrappers = /^(?:formula|equation|math|mathml|math-block|box|text|stack|row|column|card|callout|rich-text|divider|spacer|div|section|article|form|fieldset|legend|label|badge|icon|list|list-item|radio-group|radio|button|option|Image|AsyncImage|Entity|Link|Cite|Map|Chart)$/iu;
@@ -468,12 +471,13 @@ function richMarkupText(value) {
   for (const match of source.matchAll(/<\/?([A-Za-z][\w.-]*)(?=[\s/>]|$)/gu)) {
     const start = match.index, name = match[1];
     const declarativeComponent = /^[A-Z][A-Za-z0-9_.-]*$/u.test(name);
-    if (start < cursor || (!titles.test(name) && !wrappers.test(name) && !declarativeComponent)) continue;
+    if (start < cursor || (!titles.test(name) && !wrappers.test(name) && !RICH_GRID_TAG.test(name) && !declarativeComponent)) continue;
     text += source.slice(cursor, start);
     const end = tagEnd(source, start);
     cursor = end;
     if (source[end - 1] !== '>') break;
     if (titles.test(name)) text += source[start + 1] === '/' ? '\n\n' : '\n\n### ';
+    else if (RICH_GRID_TAG.test(name)) text += '\n\n';
     else if (name.toLowerCase() === 'entity' && source[start + 1] !== '/') {
       const label = attribute(source.slice(start, end), 'value');
       if (label) text += String(literal(label) ?? label);
@@ -483,7 +487,7 @@ function richMarkupText(value) {
   text += source.slice(cursor);
   // Retain '< b' inequalities, but withhold a genuine partial component name.
   text = text.replace(/<\/?([A-Za-z][\w.-]*)?$/u, (fragment, name = '') =>
-    ['title', 'subtitle', 'heading', 'subheading', 'header', 'formula', 'equation', 'math', 'box', 'text', 'Cite', 'Image', 'Map', 'Chart', 'button', 'select', 'input', 'textarea', 'option']
+    ['title', 'subtitle', 'heading', 'subheading', 'header', 'formula', 'equation', 'math', 'box', 'grid', 'grid-item', 'text', 'Cite', 'Image', 'Map', 'Chart', 'button', 'select', 'input', 'textarea', 'option']
       .some(tag => tag.toLowerCase().startsWith(name.toLowerCase())) ? '' : fragment);
   return text;
 }
@@ -629,7 +633,7 @@ function compile(value) {
     if (previous && span[0] <= previous[1]) previous[1] = Math.max(previous[1], span[1]);
     else merged.push([...span]);
   }
-  const rich = spans.length > 0 || new RegExp(`<(?:(?:Image|Cite|Map|Chart|${RICH_TITLE_TAG}|${RICH_MATH_TAG})|box|text|stack|row|column|divider|spacer)\\b|[\\uE200-\\uE20F]|\\\\uE2[0-9a-f]{2}|&lt;\\/?(?:${RICH_TITLE_TAG})\\b|turn\\d+(?:search|news|open|find|image)\\d+|<\\/?[A-Za-z]*$`, 'iu').test(input);
+  const rich = spans.length > 0 || /(?:<|&lt;)\/?grid(?:-item)?(?=[\s/>&]|$)/iu.test(input) || new RegExp(`<(?:(?:Image|Cite|Map|Chart|${RICH_TITLE_TAG}|${RICH_MATH_TAG})|box|text|stack|row|column|divider|spacer)\\b|[\\uE200-\\uE20F]|\\\\uE2[0-9a-f]{2}|&lt;\\/?(?:${RICH_TITLE_TAG})\\b|turn\\d+(?:search|news|open|find|image)\\d+|<\\/?[A-Za-z]*$`, 'iu').test(input);
   const contexts = interactionContexts(input, fields.concat(buttons), maskedResult.restore);
   for (const field of fields) field.key = JSON.stringify([contexts.get(field.start).key, field.name]);
   const result = { states, fields, buttons, contexts };
@@ -741,6 +745,28 @@ export function normalizeKuanRichDisplayText(value, presentation, streaming = fa
 
 export function normalizeKuanRichHistoryText(value, presentation) {
   return compile(resolveRichPresentation(value, presentation, false, true)).text;
+}
+
+// The Android client supplies validated URLs. Keep normal Markdown in the answer,
+// and let the app give only these images its native illustration treatment.
+export function projectKuanNativeImages(value, images, streaming, showForms) {
+  const byQuery = new Map();
+  for (const { query, url } of images.slice(0, 16)) {
+    if (typeof query !== 'string' || typeof url !== 'string' ||
+        !/^https:\/\/[^\s<>\\]+$/u.test(url) || byQuery.has(query)) continue;
+    byQuery.set(query, url);
+  }
+  const placed = new Map();
+  const input = resolveRichPresentation(value, null, streaming, true, query => {
+    const url = byQuery.get(query);
+    if (!url || placed.has(url)) return '';
+    const destination = url.replace(/\(/gu, '%28').replace(/\)/gu, '%29');
+    const image = '![](' + destination + ')';
+    placed.set(url, image);
+    return '\n\n' + image + '\n\n';
+  });
+  const result = compile(input);
+  return { text: !streaming && showForms ? result.displayText : result.text, placed };
 }
 
 // Preserve semantic layout from native declarations, never their executable

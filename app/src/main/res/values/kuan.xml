@@ -69,6 +69,11 @@
   <string name="kuan_project_import_failed">Could not import this project ZIP. Existing workspaces are unchanged.</string>
   <string name="kuan_web_images">%1$d web images</string>
   <string name="kuan_web_image_source">Image source</string>
+  <string name="kuan_web_open_image">Open full image</string>
+  <string name="kuan_reply_reasoning">Reasoning</string>
+  <string name="kuan_reply_tools">Tool activity</string>
+  <string name="kuan_reply_pending">Tool activity needs your attention</string>
+  <string name="kuan_reply_close_details">Close details</string>
   <string name="kuan_web_opening">Reading web page</string>
   <string name="kuan_web_opened">Web page read</string>
   <string name="kuan_web_open_failed">Web page unavailable</string>

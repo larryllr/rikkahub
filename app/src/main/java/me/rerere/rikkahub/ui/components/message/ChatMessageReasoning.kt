@@ -80,26 +80,26 @@ private class ReasoningState(
 }
 
 @Composable
-private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning): Pair<ReasoningState, Boolean> {
+private fun rememberReasoningState(reasoning: UIMessagePart.Reasoning, openedByUser: Boolean = false): Pair<ReasoningState, Boolean> {
     val settings = LocalSettings.current
     val loading = reasoning.finishedAt == null
     val scrollState = rememberScrollState()
 
-    val state = remember(reasoning.createdAt) {
+    val state = remember(reasoning.createdAt, openedByUser) {
         ReasoningState(
             scrollState = scrollState,
             initialDuration = reasoning.finishedAt?.let { it - reasoning.createdAt }
                 ?: (Clock.System.now() - reasoning.createdAt)
-        )
+        ).also { if (openedByUser) it.expandState = ReasoningCardState.Expanded }
     }
 
     LaunchedEffect(reasoning.reasoning, loading) {
         if (loading) {
-            if (!state.expandState.expanded && settings.displaySetting.showThinkingContent)
+            if (!openedByUser && !state.expandState.expanded && settings.displaySetting.showThinkingContent)
                 state.expandState = ReasoningCardState.Preview
             scrollState.animateScrollTo(scrollState.maxValue)
         } else {
-            if (state.expandState.expanded) {
+            if (!openedByUser && state.expandState.expanded) {
                 state.expandState = if (settings.displaySetting.autoCloseThinking)
                     ReasoningCardState.Collapsed
                 else
@@ -197,15 +197,16 @@ fun ChainOfThoughtScope.ChatMessageReasoningStep(
     assistant: Assistant?,
     fadeHeight: Float = 64f,
     collapsedAdaptiveWidth: Boolean = false,
+    openedByUser: Boolean = false,
 ) {
-    val (state, loading) = rememberReasoningState(reasoning)
+    val (state, loading) = rememberReasoningState(reasoning, openedByUser = openedByUser)
     val thinkingTitle = reasoning.reasoning.extractThinkingTitle()
     val showThinkingTitle = loading && thinkingTitle != null
     val chatFontFamily = LocalTextStyle.current.fontFamily
 
     ControlledChainOfThoughtStep(
         expanded = state.expandState == ReasoningCardState.Expanded,
-        onExpandedChange = { state.onExpandedChange(it, loading) },
+        onExpandedChange = { state.onExpandedChange(it, loading && !openedByUser) },
         icon = {
             Icon(
                 imageVector = HugeIcons.Idea01,

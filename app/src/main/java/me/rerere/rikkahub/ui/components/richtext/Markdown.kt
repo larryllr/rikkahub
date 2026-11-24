@@ -141,6 +141,7 @@ fun MarkdownBlock(
     modifier: Modifier = Modifier,
     style: TextStyle = LocalTextStyle.current,
     streaming: Boolean = false,
+    renderImage: (@Composable (String, @Composable () -> Unit) -> Unit)? = null,
     onClickCitation: (String) -> Unit = {}
 ) {
     val enableLatexRendering = LocalSettings.current.displaySetting.enableLatexRendering
@@ -162,6 +163,7 @@ fun MarkdownBlock(
     }
 
     val currentOnClickCitation by rememberUpdatedState(onClickCitation)
+    val currentImageRenderer by rememberUpdatedState(renderImage)
     val components = remember(enableLatexRendering) {
         MarkdownComponents(
             codeBlock = { block ->
@@ -173,14 +175,18 @@ fun MarkdownBlock(
                 )
             },
             image = { image, _ ->
-                ZoomableAsyncImage(
-                    model = rememberWorkspaceImageUrl(image.url),
-                    contentDescription = image.alt,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .widthIn(min = 120.dp)
-                        .heightIn(min = 120.dp),
-                )
+                val defaultImage: @Composable () -> Unit = {
+                    ZoomableAsyncImage(
+                        model = rememberWorkspaceImageUrl(image.url),
+                        contentDescription = image.alt,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .widthIn(min = 120.dp)
+                            .heightIn(min = 120.dp),
+                    )
+                }
+                val renderer = currentImageRenderer
+                if (renderer == null) defaultImage() else renderer(image.url, defaultImage)
             },
             // 禁用 LaTeX 渲染时不注册公式组件，公式以等宽字体显示源码
             mathBlock = if (enableLatexRendering) {

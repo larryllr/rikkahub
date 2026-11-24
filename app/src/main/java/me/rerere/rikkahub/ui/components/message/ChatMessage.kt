@@ -18,14 +18,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -52,12 +49,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
-import androidx.compose.ui.util.fastAll
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.util.fastForEachIndexed
 import kotlinx.coroutines.FlowPreview
@@ -73,13 +66,14 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.File02
-import me.rerere.hugeicons.stroke.Link01
 import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.kuan.KUAN_WEB_CARDS
+import me.rerere.rikkahub.data.kuan.KuanWebCard
 import me.rerere.rikkahub.data.kuan.finishKuanPresentation
+import me.rerere.rikkahub.data.kuan.inlineKuanWebImages
 import me.rerere.rikkahub.data.kuan.kuanFormSource
 import me.rerere.rikkahub.data.kuan.needsKuanPresentation
 import me.rerere.rikkahub.data.kuan.webCards
@@ -92,7 +86,6 @@ import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.SelectableContent
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.richtext.buildMarkdownPreviewHtml
-import me.rerere.rikkahub.ui.components.ui.ChainOfThought
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
 import me.rerere.rikkahub.ui.context.LocalSettings
@@ -210,6 +203,7 @@ fun ChatMessage(
                 role = message.role,
                 parts = visibleParts,
                 annotations = message.annotations,
+                webCards = webCards,
                 loading = loading,
                 model = model,
                 onToolApproval = onToolApproval,
@@ -218,7 +212,6 @@ fun ChatMessage(
             )
 
             if (message.role == MessageRole.ASSISTANT && !loading) {
-                KuanWebReplyCards(webCards)
                 message.parts.fastForEachIndexed { index, part ->
                     if (part is UIMessagePart.Text && part.kuanFormSource() != null) {
                         key(message.id, index) {
@@ -323,17 +316,16 @@ fun ChatMessage(
 }
 
 // 思考链折叠时默认保留的尾部步骤数
-private const val COLLAPSED_VISIBLE_STEPS = 2
-
 @OptIn(FlowPreview::class)
 @Composable
-private fun MessagePartsBlock(
+internal fun MessagePartsBlock(
     assistant: Assistant?,
     role: MessageRole,
     model: Model?,
     parts: List<UIMessagePart>,
     annotations: List<UIMessageAnnotation>,
     loading: Boolean,
+    webCards: List<KuanWebCard> = emptyList(),
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
@@ -374,64 +366,46 @@ private fun MessagePartsBlock(
             }
     }
 
-    // Render parts in original order (group thinking/tool as chain-of-thought)
     val groupedParts = remember(parts) { parts.groupMessageParts() }
+    val activity = remember(groupedParts) { groupedParts.filterIsInstance<MessagePartBlock.ThinkingBlock>().flatMap { it.steps } }
+    val inline = remember(parts, webCards) {
+        val anchors = parts.filterIsInstance<UIMessagePart.Text>().flatMap { it.inlineKuanWebImages() }.toHashSet()
+        webCards.mapNotNull { card ->
+            val url = card.images.firstOrNull()?.url ?: return@mapNotNull null
+            if (url in anchors) url to card.images else null
+        }.toMap()
+    }
+    val unplaced = remember(webCards, inline) {
+        val placed = inline.values.flatten().mapTo(HashSet()) { it.url }
+        webCards.flatMap { it.images }.filterNot { it.url in placed }.distinctBy { it.url }
+    }
+    val markdownImages = remember(inline) {
+        inline.mapKeys { (url, _) -> url.replace("(", "%28").replace(")", "%29") }
+    }
+    val allSources = remember(annotations, webCards) {
+        annotations + webCards.mapNotNull { card -> card.link?.let { UIMessageAnnotation.UrlCitation(card.title, it) } }
+    }
+    ChatReplyActivity(
+        steps = activity,
+        annotations = allSources,
+        extraImages = if (inline.isEmpty()) emptyList() else unplaced,
+        loading = loading,
+        model = model,
+        assistant = assistant,
+        onToolApproval = onToolApproval,
+        onToolAnswer = onToolAnswer,
+    )
+    if (!loading && inline.isEmpty() && unplaced.isNotEmpty()) {
+        KuanWebIllustration(unplaced, modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
+    }
+    val renderImage: @Composable (String, @Composable () -> Unit) -> Unit = { url, fallback ->
+        val images = markdownImages[url] ?: url.toHttpUrlOrNull()?.let { markdownImages[it.toString()] }
+        if (images == null) fallback() else KuanWebIllustration(images)
+    }
+    val lastContentIndex = (groupedParts.lastOrNull { it !is MessagePartBlock.ThinkingBlock } as? MessagePartBlock.ContentBlock)?.index
     groupedParts.fastForEach { block ->
         when (block) {
-            is MessagePartBlock.ThinkingBlock -> {
-                if (block.steps.isNotEmpty()) {
-                    val isReasoningOnlyBlock = block.steps.fastAll { it is ThinkingStep.ReasoningStep }
-                    // 等待审批的工具不能折叠起来，否则用户看不到审批按钮，这一轮会一直卡在等待审批
-                    val firstPendingIndex = block.steps.indexOfFirst { it is ThinkingStep.ToolStep && it.tool.isPending }
-                    val collapsedVisibleCount = if (firstPendingIndex == -1) {
-                        COLLAPSED_VISIBLE_STEPS
-                    } else {
-                        maxOf(COLLAPSED_VISIBLE_STEPS, block.steps.size - firstPendingIndex)
-                    }
-                    ChainOfThought(
-                        modifier = Modifier.animateContentSize(),
-                        steps = block.steps,
-                        collapsedVisibleCount = collapsedVisibleCount,
-                        collapsedAdaptiveWidth = isReasoningOnlyBlock,
-                        cardColors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = settings.displaySetting.bubbleOpacity),
-                        ),
-                    ) { step ->
-                        when (step) {
-                            is ThinkingStep.ReasoningStep -> {
-                                key(step.reasoning.createdAt) {
-                                    ChatMessageReasoningStep(
-                                        reasoning = step.reasoning,
-                                        model = model,
-                                        assistant = assistant,
-                                        collapsedAdaptiveWidth = isReasoningOnlyBlock,
-                                    )
-                                }
-                            }
-
-                            is ThinkingStep.ToolStep -> {
-                                key(step.tool.toolCallId.ifBlank { step.hashCode().toString() }) {
-                                    ChatMessageToolStep(
-                                        tool = step.tool,
-                                        loading = loading && !step.tool.isExecuted,
-                                        assistant = assistant,
-                                        onToolApproval = onToolApproval,
-                                        onToolAnswer = onToolAnswer,
-                                    )
-                                }
-                            }
-
-                            is ThinkingStep.ServerToolStep -> {
-                                key(step.tool.toolCallId.ifBlank { step.hashCode().toString() }) {
-                                    ChatMessageServerToolStep(tool = step.tool)
-                                }
-                            }
-
-                            is ThinkingStep.NoticeStep -> ChatMessageNoticeStep(notice = step.notice)
-                        }
-                    }
-                }
-            }
+            is MessagePartBlock.ThinkingBlock -> Unit
 
             is MessagePartBlock.ChartBlock -> key(block.index) {
                 val spec = remember(block.tool.input) { ChartSpec.fromJson(block.tool.inputAsJson()) }
@@ -442,7 +416,7 @@ private fun MessagePartsBlock(
                 when (val part = block.part) {
                     is UIMessagePart.Text -> {
                         // 只有正在生成的最后一段文字可能停在没写完的语法上
-                        val streamingText = loading && block.index == parts.lastIndex
+                        val streamingText = loading && block.index == lastContentIndex
                         val textContent = @Composable {
                             if (role == MessageRole.USER) {
                                 ChatMessageBubble(
@@ -490,6 +464,7 @@ private fun MessagePartsBlock(
                                                     MarkdownBlock(
                                                         content = paragraph,
                                                         streaming = streamingText && index == paragraphs.lastIndex,
+                                                        renderImage = renderImage.takeIf { inline.isNotEmpty() },
                                                         onClickCitation = handleClickCitation,
                                                     )
                                                 }
@@ -504,6 +479,7 @@ private fun MessagePartsBlock(
                                             visual = true,
                                         ),
                                         streaming = streamingText,
+                                        renderImage = renderImage.takeIf { inline.isNotEmpty() },
                                         onClickCitation = handleClickCitation,
                                         modifier = Modifier
                                             .animateContentSize()
@@ -595,11 +571,6 @@ private fun MessagePartsBlock(
             }
         }
     }
-
-    // Annotations (always rendered at the end)
-    if (annotations.isNotEmpty()) {
-        ChatMessageCitations(annotations = annotations)
-    }
 }
 
 private val BubbleCorner = 24.dp
@@ -654,54 +625,5 @@ private fun Modifier.clipDrawing(shape: Shape): Modifier = drawWithCache {
     val path = Path().apply { addOutline(shape.createOutline(size, layoutDirection, this@drawWithCache)) }
     onDrawWithContent {
         clipPath(path) { this@onDrawWithContent.drawContent() }
-    }
-}
-
-@Composable
-internal fun ChatMessageCitations(annotations: List<UIMessageAnnotation>) {
-    val links = remember(annotations) {
-        annotations.filterIsInstance<UIMessageAnnotation.UrlCitation>()
-            .mapNotNull { citation ->
-                val url = citation.url.toHttpUrlOrNull()
-                    ?.takeIf { it.username.isEmpty() && it.password.isEmpty() } ?: return@mapNotNull null
-                citation.copy(title = citation.title.ifBlank { url.host }, url = url.toString())
-            }.distinctBy { it.url }
-    }
-    if (links.isEmpty()) return
-    var expand by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier.animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec()),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        ChatMessageFileChip(
-            text = stringResource(R.string.citations_count, links.size),
-            onClick = { expand = !expand },
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = { Icon(HugeIcons.Link01, contentDescription = null, modifier = Modifier.size(18.dp)) },
-        )
-        if (expand) {
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-            ) {
-                ProvideTextStyle(
-                    MaterialTheme.typography.labelMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        links.forEachIndexed { index, link ->
-                            Text(text = buildAnnotatedString {
-                                append("${index + 1}. ")
-                                withLink(LinkAnnotation.Url(link.url)) { append(link.title) }
-                            })
-                        }
-                    }
-                }
-            }
-        }
     }
 }

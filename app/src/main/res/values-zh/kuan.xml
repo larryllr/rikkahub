@@ -69,6 +69,11 @@
   <string name="kuan_project_import_failed">无法导入此工程 ZIP，已有工作区未被改动。</string>
   <string name="kuan_web_images">%1$d 张网页图片</string>
   <string name="kuan_web_image_source">图片来源</string>
+  <string name="kuan_web_open_image">查看原图</string>
+  <string name="kuan_reply_reasoning">思考</string>
+  <string name="kuan_reply_tools">工具过程</string>
+  <string name="kuan_reply_pending">工具等待你的操作</string>
+  <string name="kuan_reply_close_details">关闭详情</string>
   <string name="kuan_web_opening">正在读取网页</string>
   <string name="kuan_web_opened">已读取网页</string>
   <string name="kuan_web_open_failed">未能读取网页</string>
