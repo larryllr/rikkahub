@@ -62,6 +62,24 @@ class ResponseApiWebSearchTest {
     }
 
     @Test
+    fun terminalSnapshotClosesSearchWithoutSourcesOrItemDone() {
+        val decoder = ResponseApiStreamDecoder()
+        val handler = StreamChunkHandler()
+        var messages = listOf(UIMessage.user("Search"))
+        listOf(
+            """{"type":"response.web_search_call.searching","item_id":"ws_1"}""",
+            """{"type":"response.completed","response":{"status":"completed","output":[
+                {"type":"web_search_call","id":"ws_1","status":"completed","action":{"type":"search","query":"Compose"}}
+            ]}}""",
+        ).forEach { payload ->
+            decoder.accept(SseEvent(data = payload)).chunks.forEach { messages = handler.handle(messages, it) }
+        }
+        val tool = messages.last().parts.filterIsInstance<UIMessagePart.ServerTool>().single()
+        assertEquals(ServerToolStatus.COMPLETED, tool.status)
+        assertEquals(listOf("Compose"), tool.webSearchPresentation()?.queries)
+    }
+
+    @Test
     fun onlyTheOfficialSearchRequestOptsInToSourceExpansion() {
         val api = ResponseAPI(OkHttpClient())
         val model = Model(

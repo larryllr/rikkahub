@@ -220,9 +220,10 @@ internal class ResponseApiStreamDecoder : StreamChunkDecoder {
                 val row = output.jsonObjectOrNull ?: return@forEach
                 if (row["type"]?.jsonPrimitiveOrNull?.contentOrNull != "web_search_call") return@forEach
                 if (row["id"]?.jsonPrimitiveOrNull?.contentOrNull.isNullOrBlank()) return@forEach
+                if (row["status"] != null && row["status"]?.jsonPrimitiveOrNull == null) return@forEach
                 val tool = row.toOpenAIServerTool()
                 val sources = (tool.input as? JsonObject)?.get("sources")?.jsonArrayOrNull
-                if (state.knowsServerTool(tool.toolCallId) && sources.isNullOrEmpty()) return@forEach
+                if (state.hasEndedServerTool(tool.toolCallId) && sources.isNullOrEmpty()) return@forEach
                 addAll(state.startServerTool(tool))
                 addAll(state.endServerTool(
                     id = tool.toolCallId,
@@ -385,7 +386,7 @@ internal class ResponseApiStreamDecoder : StreamChunkDecoder {
         fun startServerTool(tool: me.rerere.ai.ui.UIMessagePart.ServerTool): List<StreamChunk> =
             startServerTool(tool.toolCallId, tool.toolName, tool.input, tool.metadata)
 
-        fun knowsServerTool(id: String) = id in knownServerToolIds
+        fun hasEndedServerTool(id: String) = id in knownServerToolIds && id !in openServerToolIds
 
         fun startServerTool(
             id: String,
