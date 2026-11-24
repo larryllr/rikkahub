@@ -7,8 +7,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 from tempfile import TemporaryDirectory
-import urllib.request
 import zipfile
 
 from build_mobile_resources import build
@@ -122,10 +122,15 @@ def protected():
 
 def fetch(origin, route, expected):
     url = origin + route
-    request = urllib.request.Request(url, headers={'Cache-Control': 'no-cache'})
-    with urllib.request.urlopen(request, timeout=40) as response:
-        require(response.url == url and response.status == 200, 'Unexpected public endpoint response: ' + route)
-        require(response.read(len(expected) + 1) == expected, 'Incorrect public bytes: ' + url)
+    with TemporaryDirectory(prefix='kuan-classic-verify-') as folder:
+        file = Path(folder) / 'response'
+        result = subprocess.run(
+            ['curl', '--silent', '--show-error', '--fail', '--max-time', '90', '--proto', '=https',
+             '--header', 'Cache-Control: no-cache', '--output', str(file),
+             '--write-out', '%{http_code} %{url_effective}', url],
+            capture_output=True, text=True, check=True)
+        require(result.stdout == '200 ' + url, 'Unexpected public endpoint response: ' + route)
+        require(file.stat().st_size == len(expected) and file_digest(file) == digest(expected), 'Incorrect public bytes: ' + url)
 
 
 def checked_bundle(frontend, archive, changes):

@@ -1,25 +1,27 @@
 """Verify complete public edition files and manifests against the staged bytes."""
 
 from argparse import ArgumentParser
-from hashlib import sha256
 import json
 from pathlib import Path
-from urllib.request import Request, urlopen
+import subprocess
+from tempfile import TemporaryDirectory
 
 from publish_kuan_android import ORIGIN, VERSION, PREVIOUS_VERSION, verify_release, VERSION_CODE, require, sha256 as file_sha
 
 
 def audit(origin, relative, local):
     url = origin + '/downloads/' + relative
-    digest = sha256()
-    count = 0
-    with urlopen(Request(url, headers={'Cache-Control': 'no-cache', 'Accept-Encoding': 'identity'}), timeout=45) as response:
-        require(response.url == url and response.status == 200, f'Unexpected public result: {url}')
-        for block in iter(lambda: response.read(1024 * 1024), b''):
-            count += len(block)
-            digest.update(block)
-    require(count == local.stat().st_size and digest.hexdigest() == file_sha(local), f'Wrong public bytes: {url}')
-    print(json.dumps({'public': url, 'bytes': count, 'sha256': digest.hexdigest()}), flush=True)
+    with TemporaryDirectory(prefix='kuan-native-verify-') as folder:
+        file = Path(folder) / 'response'
+        result = subprocess.run(
+            ['curl', '--silent', '--show-error', '--fail', '--max-time', '90', '--proto', '=https',
+             '--header', 'Cache-Control: no-cache', '--output', str(file),
+             '--write-out', '%{http_code} %{url_effective}', url],
+            capture_output=True, text=True, check=True)
+        require(result.stdout == '200 ' + url, f'Unexpected public result: {url}')
+        count, checksum = file.stat().st_size, file_sha(file)
+        require(count == local.stat().st_size and checksum == file_sha(local), f'Wrong public bytes: {url}')
+    print(json.dumps({'public': url, 'bytes': count, 'sha256': checksum}), flush=True)
 
 
 def main():
