@@ -78,9 +78,11 @@ import me.rerere.hugeicons.stroke.MusicNote03
 import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.kuan.KUAN_WEB_CARDS
 import me.rerere.rikkahub.data.kuan.finishKuanPresentation
 import me.rerere.rikkahub.data.kuan.kuanFormSource
 import me.rerere.rikkahub.data.kuan.needsKuanPresentation
+import me.rerere.rikkahub.data.kuan.webCards
 import me.rerere.rikkahub.data.kuan.withKuanQuestionHistory
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
@@ -127,6 +129,7 @@ fun ChatMessage(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onFollowUp: ((String) -> Unit)? = null,
+    onImageFromMessage: (() -> Unit)? = null,
 ) {
     val stored = node.messages[node.selectIndex]
     val context = LocalContext.current
@@ -165,6 +168,10 @@ fun ChatMessage(
     var showSelectCopySheet by remember { mutableStateOf(false) }
     val navController = LocalNavController.current
     val colorScheme = MaterialTheme.colorScheme
+    val visibleParts = remember(message.parts) {
+        message.parts.filterNot { it is UIMessagePart.ServerTool && it.toolName == KUAN_WEB_CARDS }
+    }
+    val webCards = remember(message.parts) { message.parts.filterIsInstance<UIMessagePart.ServerTool>().flatMap { it.webCards() } }
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start,
@@ -201,7 +208,7 @@ fun ChatMessage(
             MessagePartsBlock(
                 assistant = assistant,
                 role = message.role,
-                parts = message.parts,
+                parts = visibleParts,
                 annotations = message.annotations,
                 loading = loading,
                 model = model,
@@ -211,6 +218,7 @@ fun ChatMessage(
             )
 
             if (message.role == MessageRole.ASSISTANT && !loading) {
+                KuanWebReplyCards(webCards)
                 message.parts.fastForEachIndexed { index, part ->
                     if (part is UIMessagePart.Text && part.kuanFormSource() != null) {
                         key(message.id, index) {
@@ -272,6 +280,7 @@ fun ChatMessage(
     if (showActionsSheet) {
         ChatMessageActionsSheet(
             message = message.withKuanQuestionHistory(),
+            onImageFromMessage = onImageFromMessage,
             onEdit = onEdit,
             onDelete = onDelete,
             onShare = onShare,

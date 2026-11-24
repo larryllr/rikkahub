@@ -63,6 +63,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
@@ -70,6 +71,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Delete01
+import me.rerere.hugeicons.stroke.CloudServer
 import me.rerere.hugeicons.stroke.LeftToRightListBullet
 import me.rerere.hugeicons.stroke.Menu03
 import me.rerere.hugeicons.stroke.MessageAdd01
@@ -80,6 +82,10 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.kuan.KuanChatImage
+import me.rerere.rikkahub.data.kuan.KuanHistory
+import me.rerere.rikkahub.data.kuan.kuanRoute
+import me.rerere.rikkahub.data.kuan.kuanUiMessage
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
@@ -309,6 +315,49 @@ private fun ChatPageContent(
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
     val sessionActivity by vm.sessionActivity.collectAsStateWithLifecycle()
 
+    val imageRoute = currentChatModel?.findProvider(setting.providers)?.kuanRoute()
+    val cloudHistory: KuanHistory = koinInject()
+    val context = LocalContext.current
+    var showCloudSync by remember(conversation.id) { mutableStateOf(false) }
+    var syncingCloud by remember(conversation.id) { mutableStateOf(false) }
+    if (showCloudSync && imageRoute != null) {
+        AlertDialog(
+            onDismissRequest = { showCloudSync = false },
+            title = { Text(stringResource(R.string.kuan_sync_chat)) },
+            text = { Text(stringResource(R.string.kuan_sync_chat_explain)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCloudSync = false
+                    syncingCloud = true
+                    scope.launch {
+                        try {
+                            val result = cloudHistory.syncConversation(conversation.id, imageRoute.scope)
+                            val message = if (result.conflict) R.string.kuan_sync_chat_conflict else R.string.kuan_sync_chat_done
+                            toaster.show(context.getString(message, result.imported.conversations), type = ToastType.Success)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            toaster.show(error.kuanUiMessage(), type = ToastType.Error)
+                        } finally {
+                            syncingCloud = false
+                        }
+                    }
+                }) { Text(stringResource(R.string.confirm)) }
+            },
+            dismissButton = { TextButton(onClick = { showCloudSync = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    var imageSource by remember(conversation.id, imageRoute) { mutableStateOf<Uuid?>(null) }
+    val source = imageSource
+    if (source != null && imageRoute != null) {
+        KuanChatImageDialog(imageRoute, onDismiss = { imageSource = null }) { model, prompt ->
+            imageSource = null
+            if (loadingJob == null && conversation.currentMessages.any { it.id == source }) {
+                vm.handleMessageSend(listOf(KuanChatImage(source, imageRoute.groupId, model).prompt(prompt)))
+                scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+            }
+        }
+    }
     var previewMode by rememberSaveable { mutableStateOf(false) }
     val selectionState = rememberChatSelectionState()
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -377,6 +426,7 @@ private fun ChatPageContent(
                         previewMode = false
                         selectionState.start(conversation.messageNodes.map { it.id })
                     },
+                    onClassicSync = if (imageRoute != null && !syncingCloud && loadingJob == null) ({ showCloudSync = true }) else null,
                     onDelete = {
                         showDeleteConfirm = true
                     },
@@ -503,6 +553,7 @@ private fun ChatPageContent(
                     inputState.editingMessage = null
                     inputState.setMessageText(suggestion)
                 },
+                onImageFromMessage = if (imageRoute != null) ({ message -> imageSource = message.id }) else null,
                 onFollowUp = if (inputState.isEditing()) null else { prompt ->
                     if (loadingJob == null) {
                         val appended = inputState.answerFollowUp(prompt, canSend = currentChatModel != null) { answer ->
@@ -661,6 +712,7 @@ private fun TopBar(
     onNewChat: () -> Unit,
     onShowOverview: () -> Unit,
     onExport: () -> Unit,
+    onClassicSync: (() -> Unit)? = null,
     onDelete: () -> Unit,
     onUpdateTitle: (String) -> Unit
 ) {
@@ -742,6 +794,7 @@ private fun TopBar(
                     enabled = conversation.messageNodes.isNotEmpty(),
                     onShowOverview = onShowOverview,
                     onExport = onExport,
+                    onClassicSync = onClassicSync,
                     onDelete = onDelete,
                 )
             }
@@ -791,6 +844,7 @@ private fun ChatPageMenu(
     enabled: Boolean,
     onShowOverview: () -> Unit,
     onExport: () -> Unit,
+    onClassicSync: (() -> Unit)?,
     onDelete: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -835,15 +889,22 @@ private fun ChatPageMenu(
                     text = stringResource(R.string.chat_page_conversation_map),
                     icon = HugeIcons.LeftToRightListBullet,
                     index = 0,
-                    count = 2,
+                    count = if (onClassicSync == null) 2 else 3,
                     onClick = onShowOverview,
                 )
                 MenuItem(
                     text = stringResource(R.string.export_title),
                     icon = HugeIcons.Share04,
                     index = 1,
-                    count = 2,
+                    count = if (onClassicSync == null) 2 else 3,
                     onClick = onExport,
+                )
+                if (onClassicSync != null) MenuItem(
+                    text = stringResource(R.string.kuan_sync_chat),
+                    icon = HugeIcons.CloudServer,
+                    index = 2,
+                    count = 3,
+                    onClick = onClassicSync,
                 )
             }
             Spacer(Modifier.height(MenuDefaults.GroupSpacing))

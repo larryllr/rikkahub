@@ -82,6 +82,16 @@ class WorkspaceRepository(
     suspend fun getById(id: String): WorkspaceEntity? = dao.getById(id)
 
     suspend fun create(name: String): WorkspaceEntity {
+        return createLocalWorkspace(name) {}
+    }
+
+    internal suspend fun importClassicProject(name: String, input: InputStream): WorkspaceEntity =
+        createLocalWorkspace(name) { entry -> extractClassicProject(input, manager.filesDir(entry.root)) }
+
+    private suspend fun createLocalWorkspace(
+        name: String,
+        populate: suspend (WorkspaceEntity) -> Unit,
+    ): WorkspaceEntity = withContext(Dispatchers.IO) {
         val id = Uuid.random().toString()
         val now = System.currentTimeMillis()
         val finalName = name.trim().ifBlank { "Workspace" }
@@ -96,9 +106,17 @@ class WorkspaceRepository(
             updatedAt = now,
             lastAccessAt = null,
         )
-        manager.ensureWorkspace(workspace.root)
-        dao.upsert(workspace)
-        return workspace
+        try {
+            manager.ensureWorkspace(workspace.root)
+            populate(workspace)
+            currentCoroutineContext().ensureActive()
+            withContext(NonCancellable) { dao.upsert(workspace) }
+        } catch (failure: Exception) {
+            // Only the newly allocated, unpublished workspace belongs to this import.
+            if (withContext(NonCancellable) { dao.getById(workspace.id) } == null) manager.deleteWorkspace(workspace.root)
+            throw failure
+        }
+        workspace
     }
 
     /** 用一条临时连接测试 SSH 配置; [id] 不为空时, 表单里留空的凭据沿用该工作区已保存的值 */

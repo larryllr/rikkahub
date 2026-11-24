@@ -30,6 +30,7 @@ import me.rerere.ai.provider.providers.openai.OpenAIProvider
 import me.rerere.ai.provider.providers.openai.OpenAIWire
 import me.rerere.ai.provider.stream.SseEvent
 import me.rerere.ai.ui.ImageGenerationItem
+import me.rerere.ai.ui.ServerToolStatus
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.StreamChunkHandler
 import me.rerere.ai.ui.UIMessage
@@ -63,6 +64,11 @@ internal class KuanProvider(
         val (route, resolved) = catalog.resolve(providerSetting, params.model)
         val epoch = session.state.value.epoch
         val canonical = resolved.models.first { it.id == params.model.id }
+        val image = messages.lastOrNull()?.kuanChatImage()
+        if (image != null && (image.group != route.groupId ||
+                catalog.imageModels(route.scope, route.groupId).none { it.modelId == image.model })) {
+            throw KuanProtocolError("The selected image model is no longer available in this group")
+        }
         val updated = params.copy(
             model = canonical.copy(tools = canonical.tools.intersect(params.model.tools) - BuiltInTools.ImageGeneration),
             customHeaders = emptyList(),
@@ -88,6 +94,10 @@ internal class KuanProvider(
             put("version", 1)
             put("web_only", route.lane == KuanLane.WEB)
             if (route.lane == KuanLane.WEB) put("allow_web_downgrade", true)
+            if (image != null) {
+                put("image_model", image.model)
+                put("force_image", true)
+            }
         }
         val url = if (resolved.useResponseApi) "/v1/responses" else "/v1/chat/completions"
         if (updated.backgroundTarget?.messageId != null) {
@@ -117,8 +127,12 @@ internal class KuanProvider(
             }
 
             override fun onClosed(source: EventSource) {
-                if (!decoder.terminated) close(KuanProtocolError("The reply stream closed before completion"))
-                else close()
+                try {
+                    decoder.closeFrames().forEach { trySend(it) }
+                    close()
+                } catch (error: KuanProtocolError) {
+                    close(error)
+                }
             }
 
             override fun onFailure(source: EventSource, error: Throwable?, response: Response?) {
@@ -177,10 +191,17 @@ internal class KuanProvider(
 internal class KuanStreamDecoder(wire: OpenAIWire, private val responses: Boolean) {
     private val parser = wire.streamDecoder(responses)
     private val nativeReply = KuanNativeReply()
+    private val webStages = KuanWebToolStages()
     private var hasFinish = false
     private var imageId = 0
     var terminated = false
         private set
+
+    fun closeFrames(): List<StreamChunk> = when {
+        terminated -> emptyList()
+        responses && hasFinish -> accept("[DONE]")
+        else -> throw KuanProtocolError("The reply stream closed before completion")
+    }
 
     fun accept(data: String, id: String? = null, type: String? = null): List<StreamChunk> {
         if (terminated) return emptyList()
@@ -188,7 +209,7 @@ internal class KuanStreamDecoder(wire: OpenAIWire, private val responses: Boolea
             if (!hasFinish) throw KuanProtocolError("The response ended without a completion reason")
             terminated = true
             val finalChunks = parser.accept(SseEvent(id = id, event = type, data = data)).chunks
-            return nativeReply.finish(finalChunks)
+            return webStages.endUnconfirmed() + nativeReply.finish(finalChunks)
         }
         val row = runCatching { KuanJson.parseToJsonElement(data) as? JsonObject }.getOrNull()
             ?: throw KuanProtocolError("Invalid event in the Kuan API stream")
@@ -205,23 +226,28 @@ internal class KuanStreamDecoder(wire: OpenAIWire, private val responses: Boolea
             val image = "kuan-image-${imageId++}"
             return listOf(
                 StreamChunk.ImageStart(image, mime), StreamChunk.ImageSnapshot(image, url.substringAfter(";base64,")),
-                StreamChunk.ImageEnd(image), StreamChunk.ServerToolEnd("kuan-image-progress", status = me.rerere.ai.ui.ServerToolStatus.COMPLETED),
+                StreamChunk.ImageEnd(image), StreamChunk.ServerToolEnd("kuan-image-progress", status = ServerToolStatus.COMPLETED),
             )
         }
         if (event == "response.image_generation_call.in_progress" && row.string("stage") != null) {
             return listOf(StreamChunk.ServerToolStart("kuan-image-progress", "image_generation", metadata = row))
         }
+        if (event == "kuan.web_tool.in_progress" || event == "kuan.web_tool.completed") {
+            return webStages.accept(event, row)
+        }
         if (event?.startsWith("kuan.") == true) return emptyList()
         if (responses && event == "response.done") {
             return accept(JsonObject(row + ("type" to JsonPrimitive("response.completed"))).toString(), id, type)
         }
-        if (responses && event in setOf("response.completed", "response.incomplete")) hasFinish = true
+        val responseTerminal = responses && event in setOf("response.completed", "response.incomplete")
         if (!responses) {
             val choice = row.array("choices")?.firstOrNull() as? JsonObject
             if (choice?.string("finish_reason") != null) hasFinish = true
             choice?.obj("delta")?.let { nativeReply.accept(row.string("message_id"), it) }
         }
-        return parser.accept(SseEvent(id = id, event = type, data = data)).chunks
+        return parser.accept(SseEvent(id = id, event = type, data = data)).chunks.also {
+            if (responseTerminal) hasFinish = true
+        }
     }
 }
 
@@ -229,6 +255,7 @@ private class KuanNativeReply {
     private var messageId: String? = null
     private var markdown: Pair<String, String>? = null
     private var sources: Pair<String, List<UIMessageAnnotation.UrlCitation>>? = null
+    private var cards: Pair<String, List<KuanWebCard>>? = null
 
     fun accept(id: String?, delta: JsonObject) {
         if (!delta.string("content").isNullOrEmpty() && id != null) messageId = id
@@ -246,6 +273,7 @@ private class KuanNativeReply {
                 .flatMap { it.array("sources").orEmpty().asSequence().take(32) }
                 .mapNotNull { readKuanCitation(it, native = true) }.distinctBy { it.url }.take(128).toList()
             sources = key to references
+            cards = key to snapshot.nativeWebCards()
         }
     }
 
@@ -259,6 +287,9 @@ private class KuanNativeReply {
         }
         sources?.takeIf { messageId == null || it.first == messageId }?.second?.takeIf { it.isNotEmpty() }?.let {
             add(StreamChunk.Annotations(it))
+        }
+        cards?.takeIf { messageId == null || it.first == messageId }?.let { (id, results) ->
+            addAll(results.toWebCardChunks(id))
         }
         addAll(chunks)
     }

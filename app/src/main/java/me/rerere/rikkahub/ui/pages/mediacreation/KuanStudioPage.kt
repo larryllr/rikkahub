@@ -67,6 +67,7 @@ import me.rerere.rikkahub.data.kuan.KuanCatalog
 import me.rerere.rikkahub.data.kuan.KuanJson
 import me.rerere.rikkahub.data.kuan.KuanSession
 import me.rerere.rikkahub.data.kuan.KuanStudio
+import me.rerere.rikkahub.data.kuan.KuanStudioTasks
 import me.rerere.rikkahub.data.kuan.STUDIO_ASSETS
 import me.rerere.rikkahub.data.kuan.STUDIO_LIBRARY
 import me.rerere.rikkahub.data.kuan.STUDIO_LOCAL_ORIGIN
@@ -77,6 +78,7 @@ import me.rerere.rikkahub.data.kuan.kuanUiMessage
 import me.rerere.rikkahub.data.kuan.long
 import me.rerere.rikkahub.data.kuan.obj
 import me.rerere.rikkahub.data.kuan.string
+import me.rerere.rikkahub.data.kuan.studioTaskId
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -89,6 +91,7 @@ internal fun KuanStudioPage(
     session: KuanSession = koinInject(),
     catalog: KuanCatalog = koinInject(),
     api: KuanApi = koinInject(),
+    tasks: KuanStudioTasks = koinInject(),
 ) {
     val nav = LocalNavController.current
     val context = LocalContext.current
@@ -149,10 +152,11 @@ internal fun KuanStudioPage(
                     Button(onClick = { scope.launch { catalog.refresh(force = true) } }) { Text(stringResource(R.string.kuan_refresh)) }
                 }
                 else -> key(profile.scope, auth.epoch, group.id, revision) {
-                    val studio = remember { KuanStudio(context, session, catalog, api, profile.scope, auth.epoch, group) }
+                    val studio = remember { KuanStudio(context.applicationContext, session, catalog, api, profile.scope, auth.epoch, group) }
                     StudioWebView(
                         studio = studio,
                         owner = profile.scope,
+                        tasks = tasks,
                         back = { nav.popBackStack() },
                         reload = { revision += 1 },
                     )
@@ -167,6 +171,7 @@ internal fun KuanStudioPage(
 internal fun StudioWebView(
     studio: KuanStudio,
     owner: String,
+    tasks: KuanStudioTasks,
     back: () -> Unit,
     reload: () -> Unit,
 ) {
@@ -191,7 +196,7 @@ internal fun StudioWebView(
     val runtime = remember {
         val exports = StudioExports(context, studio, owner)
         StudioRuntime(
-            studio, scope, back,
+            studio, tasks, owner, scope, back,
             pick = {
                 references.issue(suspendCancellableCoroutine { target ->
                     check(picker == null) { "The system image picker is already open" }
@@ -293,6 +298,8 @@ private fun fitStudioViewport(view: WebView) {
 
 private class StudioRuntime(
     private val studio: KuanStudio,
+    private val tasks: KuanStudioTasks,
+    private val owner: String,
     private val scope: CoroutineScope,
     private val back: () -> Unit,
     private val pick: suspend () -> JsonObject,
@@ -329,7 +336,9 @@ private class StudioRuntime(
                             "pick" -> pick()
                             "initialize" -> studio.initialize()
                             "profile" -> studio.profile()
-                            "generate" -> studio.generate(payload)
+                            "generate" -> tasks.start(studio, owner, payload)
+                            "generationStatus" -> tasks.status(studio, owner, studioTaskId(payload))
+                            "stopGeneration" -> tasks.stop(studio, owner, studioTaskId(payload))
                             "download" -> save(address(payload), payload.string("fallback")?.takeIf { it.length <= 8192 }, payload.string("name"))
                             else -> error("Unsupported Image Studio action")
                         }

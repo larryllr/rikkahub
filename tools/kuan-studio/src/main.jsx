@@ -25,7 +25,7 @@ const strings = {
     examples:'关联案例',constraints:'核心约束',pitfalls:'避坑指南',variants:'模板版本',variables:'填入变量',close:'关闭',
     empty:'没有匹配的内容',noHistory:'还没有生成记录',newest:'最新收录',featured:'精选优先',
     results:'个结果',stop:'停止',download:'下载原图',reference:'作为参考图',retry:'再次生成',failed:'生成失败',cancelled:'已停止',
-    running:'正在生成',completed:'已完成',delete:'删除',confirm:'确认删除',network:'暂时无法连接',retryLoad:'重新连接',
+    running:'正在生成',interrupted:'上次生成已中断，未自动重发',completed:'已完成',delete:'删除',confirm:'确认删除',network:'暂时无法连接',retryLoad:'重新连接',
     settings:'生成参数',guideDownload:'下载完整模板',credits:'内容来源',read:'查看详情',more:'加载更多',clear:'清空筛选',
     library:'完整案例、模板与风格规则',variant:'变体',favoriteOnly:'只看收藏',keep:'保留当前提示词',replace:'替换提示词',
     archive:'下载风格资料',compare:'2.5 对比',downloading:'正在下载',saved:'已保存到本机，再次点击可打开',albumSaved:'已保存到系统相册「宽api」，再次点击可打开',started:'已交给浏览器下载',openFile:'打开本机文件',selected:'已选案例',balance:'余额',storageError:'记录未能保存到此设备，请及时下载图片',
@@ -39,7 +39,7 @@ const strings = {
     examples:'Related cases',constraints:'Core constraints',pitfalls:'Pitfalls',variants:'Template versions',variables:'Fill variables',close:'Close',
     empty:'No matching items',noHistory:'No images yet',newest:'Newest',featured:'Featured first',
     results:'results',stop:'Stop',download:'Download original',reference:'Use as reference',retry:'Generate again',failed:'Failed',cancelled:'Stopped',
-    running:'Generating',completed:'Completed',delete:'Delete',confirm:'Confirm delete',network:'Unable to connect',retryLoad:'Reconnect',
+    running:'Generating',interrupted:'Generation interrupted; it was not resubmitted',completed:'Completed',delete:'Delete',confirm:'Confirm delete',network:'Unable to connect',retryLoad:'Reconnect',
     settings:'Generation settings',guideDownload:'Download full templates',credits:'Attribution',read:'View details',more:'Load more',clear:'Clear filters',
     library:'Cases, templates and style rules',variant:'Variant',favoriteOnly:'Favorites only',keep:'Keep current prompt',replace:'Replace prompt',
     archive:'Download style resources',compare:'Image 2.5',downloading:'Downloading',saved:'Saved on this device. Click again to open.',albumSaved:'Saved to the KuanAPI system album. Click again to open.',started:'Download sent to the browser',openFile:'Open local file',selected:'Selected case',balance:'Balance',storageError:'Unable to save on this device. Download your images.',
@@ -100,7 +100,10 @@ function App({bridge,assetBase,native}) {
         setTheme(readSetting(next.userId,'theme',defaultTheme));
         setFavorites(readSetting(next.userId,'favorites',[]));
         const stored=await listTasks(next.userId).catch(()=>{setNotice(t.storageError);return[];});
-        if(alive.current)setTasks(stored.map(task=>task.status==='generating'?{...task,status:'cancelled',error:'页面关闭前的请求已停止；已有结果保留。'}:task));
+        if(alive.current){
+          if(bridge.generationStatus&&stored.some(task=>task.status==='generating'))setView('history');
+          setTasks(bridge.generationStatus?stored:stored.map(task=>task.status==='generating'?{...task,status:'interrupted',error:t.interrupted}:task));
+        }
       }else setDraft(old=>({...old,model:old.autoModel||!models.includes(old.model)?models[0]||'':old.model}));
     } catch(e){if(alive.current)setError(e.message||t.network);}
     finally{if(alive.current)setConnecting(false);}
@@ -120,7 +123,7 @@ function App({bridge,assetBase,native}) {
   useEffect(()=>{if(!connection)return;try{writeSetting(connection.userId,'favorites',favorites);writeSetting(connection.userId,'theme',theme);}catch{setNotice(t.storageError);}},[favorites,theme,connection?.userId]);
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),4500);return()=>clearTimeout(timer);},[notice]);
   useEffect(()=>{if(!tasks.some(task=>task.status==='generating'))return;const timer=setInterval(()=>setTick(Date.now()),1000);return()=>clearInterval(timer);},[tasks]);
-  useEffect(()=>{const handler=event=>{if(controllers.current.size){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',handler);return()=>window.removeEventListener('beforeunload',handler);},[]);
+  useEffect(()=>{const handler=event=>{if(!native&&controllers.current.size){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',handler);return()=>window.removeEventListener('beforeunload',handler);},[native]);
   useEffect(()=>{const handler=event=>{if(event.key==='Escape'){setPreview(null);closeSelected();setSettingsOpen(false);}};document.addEventListener('keydown',handler);return()=>document.removeEventListener('keydown',handler);},[]);
   useEffect(()=>{setLimit(30);listRef.current?.scrollTo({top:0});},[filters,sort,view]);
   useEffect(()=>{if(!moreRef.current)return;const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))setLimit(n=>n+24);},{root:listRef.current,rootMargin:'250px'});observer.observe(moreRef.current);return()=>observer.disconnect();},[view,data,limit]);
@@ -153,7 +156,7 @@ function App({bridge,assetBase,native}) {
   const selectView=id=>{promptRef.current?.blur();setEditorOpen(false);setSettingsOpen(false);closeSelected();setView(id);};
   const applyPrompt=(prompt,item)=>{patchDraft({prompt});setPendingPrompt(null);closeSelected();openEditor();};
   const favorite=id=>setFavorites(old=>old.includes(id)?old.filter(value=>value!==id):[...old,id]);
-  const persist=async task=>{try{await saveTask(task);}catch{if(alive.current)setNotice(t.storageError);}};
+  const persist=async task=>{try{await saveTask(task);return true;}catch{if(alive.current)setNotice(t.storageError);return false;}};
   const putTask=task=>{if(alive.current)setTasks(old=>[task,...old.filter(row=>row.id!==task.id)]);};
   const addFiles=async files=>{
     try{
@@ -176,10 +179,17 @@ function App({bridge,assetBase,native}) {
     if(validation){setNotice(validation);return;}
     const task={...cleanDraft(input),id:crypto.randomUUID(),userId:String(active.userId),createdAt:Date.now(),status:'generating',
       references:structuredClone(override?.references||references),images:[]};
-    const controller=new AbortController();controllers.current.set(task.id,controller);setTick(task.createdAt);putTask(task);void persist(task);
+    const controller=new AbortController();controllers.current.set(task.id,controller);setTick(task.createdAt);putTask(task);
     selectView('history');listRef.current?.scrollTo({top:0});
     try{
-      const result=await bridge.generate({...cleanDraft(input),referenceImages:task.references.map(ref=>ref.dataUrl),signal:controller.signal});
+      const saved=await persist(task);
+      if(bridge.generationStatus&&!saved)throw new Error(t.storageError);
+      if(controller.signal.aborted)throw new DOMException('Aborted','AbortError');
+      const result=await bridge.generate({...cleanDraft(input),taskId:task.id,referenceImages:task.references.map(ref=>ref.dataUrl),signal:controller.signal});
+      if(bridge.generationStatus){
+        if(result.status!=='generating')void applyReceipt(task,result);
+        return;
+      }
       if(controller.signal.aborted)throw new DOMException('Aborted','AbortError');
       if(!result.images?.length)throw new Error('接口未返回图片');
       Object.assign(task,result,{status:'completed',completedAt:Date.now(),elapsedMs:Date.now()-task.createdAt});
@@ -189,7 +199,43 @@ function App({bridge,assetBase,native}) {
       completedAt:Date.now(),elapsedMs:Date.now()-task.createdAt});putTask({...task});await persist(task);}
     finally{controllers.current.delete(task.id);}
   };
-  const stop=id=>{controllers.current.get(id)?.abort();setTasks(old=>old.map(task=>task.id===id?{...task,status:'cancelled',error:t.cancelled}:task));};
+  const applyReceipt=async(task,receipt)=>{
+    const {status}=receipt||{};
+    if(!['completed','failed','cancelled','interrupted'].includes(status))return;
+    const completedAt=Number(receipt.completedAt)||Date.now();
+    const next={...task,...receipt.result,status,error:receipt.error||(status==='interrupted'?t.interrupted:status==='cancelled'?t.cancelled:''),
+      completedAt,elapsedMs:Math.max(0,completedAt-task.createdAt)};
+    putTask(next);await persist(next);
+    if(status==='completed')bridge.profile?.().then(user=>{if(alive.current)setConnection(old=>old?{...old,balance:user.balance}:old);}).catch(()=>{});
+  };
+  useEffect(()=>{
+    if(!bridge.generationStatus||!tasks.some(task=>task.status==='generating'))return;
+    let active=true,polling=false;
+    const poll=async()=>{
+      if(polling)return;
+      polling=true;
+      try{
+        for(const task of tasks) {
+          if(!active)break;
+          if(task.status!=='generating'||controllers.current.has(task.id))continue;
+          const receipt=await bridge.generationStatus(task.id);
+          if(active)await applyReceipt(task,receipt);
+        }
+      }catch(error){if(active)setNotice(error.message);}
+      finally{polling=false;}
+    };
+    const timer=setInterval(poll,650);
+    return()=>{active=false;clearInterval(timer);};
+  },[tasks]);
+  const stop=id=>{
+    if(bridge.stopGeneration){
+      const task=tasks.find(row=>row.id===id);
+      controllers.current.get(id)?.abort();
+      if(task)void bridge.stopGeneration(id).then(receipt=>applyReceipt(task,receipt)).catch(error=>setNotice(error.message));
+      return;
+    }
+    controllers.current.get(id)?.abort();setTasks(old=>old.map(task=>task.id===id?{...task,status:'cancelled',error:t.cancelled}:task));
+  };
   const removeTask=async task=>{try{await deleteTask(connection.userId,task.id);setTasks(old=>old.filter(row=>row.id!==task.id));}catch(e){setNotice(e.message);}};
   const download=async(url,name)=>{
     if(downloads[url]==='pending')return;

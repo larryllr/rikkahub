@@ -5,6 +5,7 @@ import me.rerere.rikkahub.data.kuan.KuanJobRecord
 import me.rerere.rikkahub.data.kuan.KuanProtocolError
 import me.rerere.rikkahub.data.kuan.kuanRoute
 import me.rerere.rikkahub.data.kuan.finishKuanPresentation
+import me.rerere.rikkahub.data.kuan.kuanChatImage
 import me.rerere.rikkahub.data.kuan.KuanPresentationPreview
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.StreamChunkHandler
@@ -282,6 +283,9 @@ class ChatService internal constructor(
         sessionManager.getGenerationStartedAtFlow(conversationId)
 
     fun getConversationJobs(): Flow<Map<Uuid, Job?>> = sessionManager.getConversationJobs()
+
+    internal suspend fun hasKuanHistoryJob(id: Uuid): Boolean =
+        sessionManager.get(id)?.canStartNextTurn == false || kuanJobs.pending(id) != null
 
     /** 任务槽里的任务在做什么，槽空着时是 null */
     fun getActivityFlow(conversationId: Uuid): Flow<SessionActivity?> =
@@ -809,7 +813,11 @@ class ChatService internal constructor(
             // 中途压缩把检查点插在回复之后；重新生成较早的消息时后面还有别的节点，不压缩
             val canCompress = regenerateNodeId == null || conversation.messageNodes.lastOrNull()?.id == regenerateNodeId
 
-            val turn = requestFactory.createContext(settings, conversation)
+            val image = target.history.lastOrNull()?.kuanChatImage()
+            val turn = requestFactory.createContext(settings, conversation, imageOnly = image != null)
+            if (image != null && turn.providerSetting.kuanRoute()?.groupId != image.group) {
+                throw KuanProtocolError("Switch back to the original Kuan API group to retry this image")
+            }
             val managed = turn.providerSetting.kuanRoute() != null
             if (managed && kuanJobs.pending(conversationId) != null) {
                 throw KuanProtocolError("Recover or stop the pending server task before starting another reply")

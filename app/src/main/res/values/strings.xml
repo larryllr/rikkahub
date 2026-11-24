@@ -1141,6 +1141,8 @@
   <string name="update_card_unknown_error">Unknown error</string>
   <string name="upload_file">Upload File</string>
   <string name="use_web_search">Web Search</string>
+  <string name="chat_message_web_search_running">Searching the web</string>
+  <string name="chat_message_web_search_failed">Web search failed</string>
   <string name="user_default_name">User</string>
   <string name="video">Video</string>
   <string name="setting_theme_page_delete_theme_title">Delete Theme</string>

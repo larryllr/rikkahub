@@ -17,10 +17,13 @@ import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.saveUploadFromUri
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.asRequestBody
 
 internal const val MAX_LEGACY_BACKUP = 90L * 1024 * 1024
 private const val MAX_ATTACHMENT = 96L * 1024 * 1024
 private const val CHAT_SYNC = "$KUAN_API/kuan/chat-sync"
+private val archiveMediaType = "application/vnd.kuanapi.chat-sync+zip".toMediaType()
 private val assetPath = Regex("^/(?:api/v1/)?kuan/chat-assets/asset-[a-f0-9]{32}$")
 private val generatedPath = Regex("^/download/file/[a-f0-9]{32}/[^/]+$")
 private val baseUrl = KUAN_ORIGIN.toHttpUrl()
@@ -119,7 +122,7 @@ internal class KuanFiles(
         return AtomicFile(File(cacheIndex, id))
     }
 
-    suspend fun cloudArchive(scope: String, destination: File) {
+    suspend fun cloudArchive(scope: String, destination: File): String =
         session.authorized(scope, replaySafe = true) { token ->
             val meta = api.json("$CHAT_SYNC?meta=1", bearer = token).asObject()
             val size = meta.long("size")?.takeIf { it in 1..MAX_LEGACY_BACKUP }
@@ -130,6 +133,22 @@ internal class KuanFiles(
             if (archive.size != size || archive.sha256 != digest) {
                 throw KuanProtocolError("The saved backup changed during download")
             }
+            digest
+        }
+
+    suspend fun publishCloudArchive(scope: String, archive: File, revision: String?, digest: String) {
+        require(archive.length() in 1..MAX_LEGACY_BACKUP)
+        val precondition = if (revision == null) mapOf("If-None-Match" to "*") else mapOf("If-Match" to "\"$revision\"")
+        val receipt = try {
+            session.authorized(scope) { token ->
+                api.exchange(api.request(CHAT_SYNC, "PUT", token, archive.asRequestBody(archiveMediaType), precondition)).asObject()
+            }
+        } catch (error: KuanHttpError) {
+            if (error.status == 412) throw KuanProtocolError("The classic cloud backup changed. Sync again to merge the current version.")
+            throw error
+        }
+        if (receipt.long("size") != archive.length() || receipt.string("sha256") != digest) {
+            throw KuanProtocolError("The server did not confirm the exact cloud archive")
         }
     }
 

@@ -73,6 +73,8 @@ async function start() {
     },
     validate,
     generate: ({ signal, ...payload }) => call("generate", payload, signal),
+    generationStatus: (taskId) => call("generationStatus", {taskId}),
+    stopGeneration: (taskId) => call("stopGeneration", {taskId}),
     profile: () => call("profile"),
     async pickFiles() {
       const { files } = await call("pick");

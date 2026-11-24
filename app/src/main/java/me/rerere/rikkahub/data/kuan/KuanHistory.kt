@@ -23,17 +23,19 @@ import me.rerere.ai.ui.ReasoningType
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.saveUploadFromBytes
 import me.rerere.rikkahub.data.files.saveUploadFromUri
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.service.ChatService
 
-private const val MAX_UNPACKED = 100L * 1024 * 1024
-private const val MAX_MANIFEST = 25L * 1024 * 1024
-private const val MAX_FILES = 20_000
-private const val MAX_MESSAGES = 50_000
+internal const val MAX_UNPACKED = 100L * 1024 * 1024
+internal const val MAX_MANIFEST = 25L * 1024 * 1024
+internal const val MAX_FILES = 20_000
+internal const val MAX_MESSAGES = 50_000
 
 data class KuanHistoryResult(val conversations: Int, val messages: Int, val skipped: Int, val missingFiles: Int)
 
@@ -46,6 +48,7 @@ internal class KuanHistory(
     private val chat: ChatService,
 ) {
     private val mutex = Mutex()
+    private val cloud = KuanCloudHistory(context, session, files, kuanFiles)
 
     suspend fun import(local: Uri?): KuanHistoryResult = withContext(Dispatchers.IO) {
         mutex.withLock {
@@ -65,10 +68,27 @@ internal class KuanHistory(
                 ZipFile(temporary).use { archive ->
                     val manifest = readKuanArchive(archive, profile.id)
                     val assistant = settings.awaitLoaded().assistantId
-                    importArchive(archive, manifest, profile, epoch, assistant)
+                    importArchive(archive, manifest, profile, epoch, assistant, fromCloud = local == null)
                 }
             } finally {
                 temporary.delete()
+            }
+        }
+    }
+
+    suspend fun syncConversation(id: Uuid, expectedScope: String): KuanCloudSyncResult = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val profile = session.profile().takeIf { it.scope == expectedScope } ?: throw KuanHttpError(401)
+            val epoch = session.state.value.epoch
+            val current = chat.getConversation(id) ?: throw KuanProtocolError("The conversation no longer exists")
+            val setting = settings.awaitLoaded()
+            val model = setting.getChatModelOf(current)
+            if (model?.findProvider(setting.providers)?.kuanRoute()?.scope != profile.scope) {
+                throw KuanProtocolError("Only a conversation using this Kuan API account can be synced")
+            }
+            if (chat.hasKuanHistoryJob(id)) throw KuanProtocolError("Wait for this conversation to finish before syncing")
+            cloud.sync(current, profile, epoch) { zip, archive ->
+                importArchive(zip, archive, profile, epoch, setting.assistantId, fromCloud = true)
             }
         }
     }
@@ -79,6 +99,7 @@ internal class KuanHistory(
         profile: KuanProfile,
         epoch: Long,
         assistant: Uuid,
+        fromCloud: Boolean,
     ): KuanHistoryResult {
         var conversations = 0
         var messages = 0
@@ -87,9 +108,19 @@ internal class KuanHistory(
         manifest.conversations.forEach history@{ row ->
             currentCoroutineContext().ensureActive()
             if (!session.isCurrent(profile.scope, epoch)) throw KuanHttpError(401)
-            val id = legacyId(profile.scope, "conversation", row.id)
-            val existing = chat.getConversation(id)?.messageNodes.orEmpty()
+            if (fromCloud && cloud.isOwnRevision(profile.scope, row.id, row.revision)) {
+                skipped++
+                return@history
+            }
+            val original = legacyId(profile.scope, "conversation", row.id)
+            val prior = chat.getConversation(original)?.messageNodes.orEmpty()
                 .flatMap { it.messages }.mapTo(HashSet()) { it.id }
+            val id = if (fromCloud && cloud.importedRevisionChanged(profile.scope, row, prior.isNotEmpty())) {
+                // v1 has no branch or deletion events. Keep the changed classic copy rather than rewrite a local branch.
+                legacyId(profile.scope, "conversation", row.id + "/" + row.revision)
+            } else original
+            val existing = if (id == original) prior
+            else chat.getConversation(id)?.messageNodes.orEmpty().flatMap { it.messages }.mapTo(HashSet()) { it.id }
             val entryFiles = mutableListOf<Long>()
             val nodes = mutableListOf<MessageNode>()
             row.messages.forEach message@{ message ->
@@ -125,6 +156,7 @@ internal class KuanHistory(
                 }
             }
             if (nodes.isEmpty()) {
+                if (fromCloud && existing.isNotEmpty()) cloud.recordImportedRevision(profile.scope, row)
                 skipped++
                 return@history
             }
@@ -141,6 +173,7 @@ internal class KuanHistory(
                 entryFiles.forEach { files.delete(it) }
                 skipped++
             } else {
+                if (fromCloud) cloud.recordImportedRevision(profile.scope, row)
                 conversations++
                 messages += added
             }
@@ -186,9 +219,12 @@ internal class KuanHistory(
     }
 }
 
-internal data class KuanArchive(val conversations: List<LegacyConversation>, val assets: Map<String, LegacyAsset>)
+internal data class KuanArchive(
+    val conversations: List<LegacyConversation>, val assets: Map<String, LegacyAsset>, val manifest: JsonObject,
+)
 internal data class LegacyConversation(
     val id: String, val title: String, val createdAt: Long, val updatedAt: Long, val messages: List<LegacyMessage>,
+    val revision: String,
 )
 internal data class LegacyMessage(
     val id: String, val role: MessageRole, val createdAt: Long, val content: String,
@@ -271,9 +307,9 @@ internal suspend fun readKuanArchive(zip: ZipFile, owner: Long): KuanArchive {
                 message.string("content").orEmpty(), message.string("reasoningSummary"), attachments)
         }
         LegacyConversation(id, row.string("title").orEmpty().take(200), createdAt,
-            maxOf(createdAt, row.timestamp("updatedAt")), messages)
+            maxOf(createdAt, row.timestamp("updatedAt")), messages, cloudRowRevision(row))
     }
-    return KuanArchive(conversations, assets)
+    return KuanArchive(conversations, assets, root)
 }
 
 private fun JsonObject.requiredId(field: String) = string(field)?.takeIf { it.isNotBlank() && it.length <= 256 }

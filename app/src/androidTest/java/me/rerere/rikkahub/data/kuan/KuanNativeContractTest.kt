@@ -26,6 +26,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.BackgroundTarget
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.openai.OpenAIWire
@@ -38,6 +39,8 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.saveUploadFromBytes
+import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.service.ChatService
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -58,6 +61,99 @@ import org.koin.core.context.GlobalContext
 
 @RunWith(AndroidJUnit4::class)
 class KuanNativeContractTest {
+    @Test
+    fun cloudSyncUsesServerRevisionAndRetainsClassicFilesAndOtherEdits() = runBlocking<Unit> {
+        withTimeout(45_000) {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val slot = File.createTempFile("kuan-cloud-contract-", ".tmp", context.cacheDir)
+            check(slot.delete() && slot.mkdirs())
+            val fixture = Fixture()
+            val isolated = object : ContextWrapper(context) {
+                override fun getNoBackupFilesDir() = slot
+                override fun getApplicationContext() = this
+                override fun getSharedPreferences(name: String, mode: Int) =
+                    super.getSharedPreferences(name + slot.name, mode)
+            }
+            val scope = AppScope()
+            try {
+                val baseline = File(slot, "baseline.zip")
+                fixture.writeArchive(baseline, 42, "classic")
+                fixture.cloudBytes = baseline.readBytes()
+                val api = KuanApi(KuanApi.privateClient().newBuilder().addInterceptor(fixture).build())
+                val session = KuanSession(isolated, scope, api)
+                session.state.first { !it.loading }
+                session.signIn("native-fixture@example.invalid", "fixture-password")
+                val profile = session.profile()
+                val epoch = session.state.value.epoch
+                val files = GlobalContext.get().get<FilesManager>()
+                val local = files.saveUploadFromBytes(fixture.original, "native.py", "text/x-python")
+                val sent = UIMessage(role = MessageRole.USER, parts = listOf(
+                    UIMessagePart.Text("Original local version"),
+                    UIMessagePart.Document(files.getFile(local).toUri().toString(), "native.py", "text/x-python"),
+                ))
+                val conversation = Conversation(
+                    assistantId = Uuid.random(), title = "Native conversation",
+                    messageNodes = listOf(MessageNode(messages = listOf(sent))),
+                )
+                val service = KuanCloudHistory(isolated, session, files, KuanFiles(isolated, session, api, files))
+                var nativeId = ""
+                val import: suspend (java.util.zip.ZipFile, KuanArchive) -> KuanHistoryResult = { zip, archive ->
+                    assertTrue(archive.conversations.any { it.id == "classic" })
+                    assertArrayEquals(fixture.original, zip.getInputStream(zip.getEntry("assets/a1")).use { it.readBytes() })
+                    val native = archive.conversations.last()
+                    nativeId = native.id
+                    val asset = archive.assets.getValue(native.messages.single().files.single().assetId!!)
+                    assertEquals("native.py", asset.name)
+                    assertArrayEquals(fixture.original, zip.getInputStream(zip.getEntry(asset.path)).use { it.readBytes() })
+                    KuanHistoryResult(1, 2, 0, 0)
+                }
+                val first = service.sync(conversation, profile, epoch, import)
+                assertTrue(first.published)
+                assertFalse(first.conflict)
+                assertFalse(service.sync(conversation, profile, epoch, import).published)
+                assertEquals(1, fixture.cloudWrites.get())
+
+                val cloud = checkNotNull(fixture.cloudBytes)
+                val modifiedCloud = java.io.ByteArrayOutputStream()
+                java.util.zip.ZipInputStream(cloud.inputStream()).use { source ->
+                    ZipOutputStream(modifiedCloud).use { next ->
+                        while (true) {
+                            val row = source.nextEntry ?: break
+                            val bytes = source.readBytes()
+                            next.putNextEntry(ZipEntry(row.name))
+                            next.write(if (row.name == "manifest.json") {
+                                bytes.decodeToString().replace("Original local version", "Classic changed this independently").encodeToByteArray()
+                            } else bytes)
+                            next.closeEntry()
+                        }
+                    }
+                }
+                fixture.cloudBytes = modifiedCloud.toByteArray()
+                val oldId = nativeId
+                val edited = conversation.copy(messageNodes = listOf(MessageNode(messages = listOf(sent.copy(
+                    parts = listOf(UIMessagePart.Text("Native edited version"), sent.parts.last()),
+                )))))
+                val merged = service.sync(edited, profile, epoch) { zip, archive ->
+                    import(zip, archive)
+                    assertTrue(archive.conversations.any { it.id == oldId && it.messages.single().content == "Classic changed this independently" })
+                    assertTrue(archive.conversations.any { it.id != oldId && it.messages.last().content == "Native edited version" })
+                    KuanHistoryResult(1, 2, 0, 0)
+                }
+                assertTrue(merged.conflict && merged.published)
+                val last = checkNotNull(fixture.cloudBytes)
+                fixture.rejectCloudWrite = true
+                assertTrue(runCatching { service.sync(edited.copy(title = "Concurrent change"), profile, epoch, import) }
+                    .exceptionOrNull() is KuanProtocolError)
+                assertEquals(2, fixture.cloudWrites.get())
+                assertArrayEquals(last, fixture.cloudBytes)
+                files.delete(local.id)
+            } finally {
+                scope.cancel()
+                slot.deleteRecursively()
+            }
+        }
+    }
+
     @Test
     fun responsesReplyUsesTheSamePresentationAsChatCompletions() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -115,7 +211,8 @@ class KuanNativeContractTest {
                 assertEquals(2L, catalog.state.value.groupId)
                 val work = settings.awaitLoaded().providers.filterIsInstance<ProviderSetting.OpenAI>()
                     .single { it.kuanRoute()?.groupId == 2L }
-                assertEquals("fixture-work", work.models.single().modelId)
+                val workModel = work.models.single { it.type != ModelType.IMAGE }
+                assertEquals("fixture-work", workModel.modelId)
                 assertTrue(work.useResponseApi)
                 assertEquals("fixture-key-group-1", catalog.key(profile.scope, 1))
                 assertEquals(1, fixture.keyRequests.count { it == 1L })
@@ -171,6 +268,27 @@ class KuanNativeContractTest {
                 reopened.acknowledge(conversation, reply)
                 assertEquals(1, fixture.receipts.get())
                 assertNull(reopened.pending(conversation))
+
+                for ((settings, model, group) in listOf(Triple(web, selected, 1L), Triple(work, workModel, 2L))) {
+                    val action = KuanChatImage(earlier.id, group, "fixture-paint-$group")
+                    val request = UIMessage(role = MessageRole.USER, parts = listOf(action.prompt("Edit the original")))
+                    val replyFrames = mutableListOf<StreamChunk>()
+                    provider.streamText(
+                        settings,
+                        action.context(listOf(earlier, follow, request)),
+                        TextGenerationParams(model = model),
+                    ).collect { replyFrames += it }
+                    assertEquals("eA==", replyFrames.filterIsInstance<StreamChunk.ImageSnapshot>().single().data)
+                    assertEquals(1, replyFrames.count { it is StreamChunk.Finish })
+                    val (path, body) = fixture.imageRequests.last()
+                    assertEquals(if (group == 1L) "/v1/chat/completions" else "/v1/responses", path)
+                    assertEquals("fixture-paint-$group", body.obj("x_kuanapi_chat")!!.string("image_model"))
+                    assertTrue(body.obj("x_kuanapi_chat")!!.flag("force_image"))
+                    assertTrue(body.toString().contains("kuan-asset://" + fixture.assetId))
+                    assertFalse(body.toString().contains("Read the original file"))
+                }
+                assertEquals(2, fixture.imageRequests.size)
+                assertEquals(1, fixture.uploads.get())
 
                 val filePath = "/download/file/" + "a".repeat(32) + "/original.py"
                 val link = kuanFileLink("http://ai.larryllr.cc.cd" + filePath) as KuanFileLink.Owned
@@ -257,6 +375,10 @@ class KuanNativeContractTest {
         val uploads = AtomicInteger()
         val receipts = AtomicInteger()
         val adminRequests = AtomicInteger()
+        val imageRequests = CopyOnWriteArrayList<Pair<String, JsonObject>>()
+        val cloudWrites = AtomicInteger()
+        @Volatile var cloudBytes: ByteArray? = null
+        @Volatile var rejectCloudWrite = false
         @Volatile var created: JsonObject? = null
         @Volatile var released = false
 
@@ -277,6 +399,30 @@ class KuanNativeContractTest {
                     else ok(req, """{"id":$id,"role":"${if (admin) "admin" else "user"}","email":"native-fixture@example.invalid","balance":12.43}""")
                 }
                 path == "/api/v1/auth/logout" -> ok(req, "{}")
+                path == "/api/v1/kuan/chat-sync" -> {
+                    check(auth == "Bearer fixture-user-42")
+                    val prior = cloudBytes
+                    if (req.method == "PUT") {
+                        val expected = prior?.let { "\"${fixtureDigest(it)}\"" }
+                        if (rejectCloudWrite || (prior == null && req.header("If-None-Match") != "*") ||
+                            (prior != null && req.header("If-Match") != expected)) {
+                            ok(req, "null", 412)
+                        } else {
+                            val bytes = Buffer().also { req.body!!.writeTo(it) }.readByteArray()
+                            cloudBytes = bytes
+                            cloudWrites.incrementAndGet()
+                            ok(req, cloudMeta(bytes))
+                        }
+                    } else if (prior == null) {
+                        ok(req, "null", 404)
+                    } else if (req.url.queryParameter("meta") == "1") {
+                        ok(req, cloudMeta(prior))
+                    } else {
+                        Response.Builder().request(req).protocol(Protocol.HTTP_1_1).code(200).message("Fixture")
+                            .header("Content-Type", "application/vnd.kuanapi.chat-sync+zip")
+                            .body(prior.toResponseBody("application/vnd.kuanapi.chat-sync+zip".toMediaType())).build()
+                    }
+                }
                 path == "/api/v1/kuan/web-accounts" -> {
                     check(admin && auth == "Bearer fixture-user-42")
                     adminRequests.incrementAndGet()
@@ -316,10 +462,12 @@ class KuanNativeContractTest {
                     val data = if (auth == "Bearer fixture-key-group-1") {
                         """{"data":[{"id":"fixture-web","kuan_chatgpt_web":true,
                             "kuan_web_lane":"auto","supported_reasoning_levels":[{"effort":"standard"},"extended"]},
-                            {"id":"admin-pro","kuan_chatgpt_web":true,"kuan_admin_only":true}]}"""
+                            {"id":"admin-pro","kuan_chatgpt_web":true,"kuan_admin_only":true},
+                            {"id":"fixture-paint-1","task":"image"}]}"""
                     } else {
                         check(auth == "Bearer fixture-key-group-2")
-                        """{"data":[{"id":"fixture-work","input_modalities":["text"]}]}"""
+                        """{"data":[{"id":"fixture-work","input_modalities":["text"]},
+                            {"id":"fixture-paint-2","task":"image"}]}"""
                     }
                     response(req, 200, data)
                 }
@@ -328,6 +476,20 @@ class KuanNativeContractTest {
                     assertArrayEquals(original, Buffer().also { req.body!!.writeTo(it) }.readByteArray())
                     uploads.incrementAndGet()
                     ok(req, """{"id":"$assetId","sha256":"$hash","size":${original.size}}""")
+                }
+                path == "/v1/chat/completions" || path == "/v1/responses" -> {
+                    val work = path == "/v1/responses"
+                    check(auth == if (work) "Bearer fixture-key-group-2" else "Bearer fixture-key-group-1")
+                    imageRequests += path to read(req)
+                    val frames = listOf(
+                        """{"type":"response.image_generation_call.in_progress","stage":"generating"}""",
+                        """{"type":"image_generation.completed","url":"data:image/png;base64,eA=="}""",
+                    ) + if (work) {
+                        listOf("""{"type":"response.completed","response":{"id":"completed","status":"completed","output":[]}}""")
+                    } else {
+                        listOf("""{"id":"fixture","choices":[{"delta":{},"finish_reason":"stop"}]}""", "[DONE]")
+                    }
+                    response(req, 200, frames.joinToString("") { "data: $it\n\n" }, "text/event-stream")
                 }
                 path == "/api/v1/kuan/chat-jobs" && req.method == "POST" -> {
                     check(auth == "Bearer fixture-user-42")
@@ -394,6 +556,9 @@ class KuanNativeContractTest {
             Buffer().also { req.body!!.writeTo(it) }.readUtf8(),
         ).asObject()
         private fun ok(req: Request, data: String, code: Int = 200) = response(req, code, """{"code":0,"data":$data}""")
+        private fun fixtureDigest(bytes: ByteArray) =
+            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        private fun cloudMeta(bytes: ByteArray) = """{"size":${bytes.size},"sha256":"${fixtureDigest(bytes)}"}"""
         private fun response(req: Request, code: Int, body: String, mime: String = "application/json", disposition: String? = null) =
             Response.Builder().request(req).code(code).protocol(Protocol.HTTP_1_1).message("Synthetic fixture")
                 .header("Content-Type", mime).apply { disposition?.let { header("Content-Disposition", it) } }

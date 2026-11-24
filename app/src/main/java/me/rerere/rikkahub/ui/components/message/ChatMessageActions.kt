@@ -47,6 +47,7 @@ import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Edit01
 import me.rerere.hugeicons.stroke.FavouriteCircle
 import me.rerere.hugeicons.stroke.GitFork
+import me.rerere.hugeicons.stroke.Image01
 import me.rerere.hugeicons.stroke.MoreVertical
 import me.rerere.hugeicons.stroke.Refresh03
 import me.rerere.hugeicons.stroke.Share04
@@ -266,6 +267,7 @@ fun ChatMessageActionsSheet(
     isFavorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
     onWebViewPreview: () -> Unit,
+    onImageFromMessage: (() -> Unit)? = null,
     onDismissRequest: () -> Unit
 ) {
     ModalBottomSheet(
@@ -279,6 +281,9 @@ fun ChatMessageActionsSheet(
             add(MessageSheetAction(HugeIcons.TextSelection, stringResource(R.string.select_and_copy), onClick = onSelectAndCopy))
             if (hasTextContent) {
                 add(MessageSheetAction(HugeIcons.WebDesign01, stringResource(R.string.render_with_webview), onClick = onWebViewPreview))
+            }
+            if (onImageFromMessage != null) {
+                add(MessageSheetAction(HugeIcons.Image01, stringResource(R.string.kuan_chat_image), onClick = onImageFromMessage))
             }
             add(MessageSheetAction(HugeIcons.Edit01, stringResource(R.string.edit), onClick = onEdit))
             add(MessageSheetAction(HugeIcons.Share04, stringResource(R.string.share), onClick = onShare))

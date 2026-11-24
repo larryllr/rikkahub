@@ -299,6 +299,16 @@ internal class KuanCatalog(
         val key = key(route.scope, route.groupId)
         return route to group.provider(route.scope, route.lane, valid.models).copy(apiKey = key)
     }
+
+    suspend fun imageModels(scope: String, groupId: Long): List<Model> {
+        val profile = session.profile().takeIf { it.scope == scope } ?: throw KuanHttpError(401)
+        val epoch = session.state.value.epoch
+        val group = state.value.groups.firstOrNull { it.id == groupId } ?: throw KuanHttpError(403, "GROUP_UNAVAILABLE")
+        val listing = api.json("/v1/models?kuan_chat=1", bearer = key(scope, groupId), envelope = false).asObject()
+        if (!session.isCurrent(scope, epoch)) throw KuanHttpError(401)
+        return managedModels(listing, scope, group, profile.admin).asSequence().flatMap { it.models }
+            .filter { it.type == ModelType.IMAGE }.distinctBy { it.modelId }.toList()
+    }
 }
 
 internal fun Throwable.kuanUiMessage(): String = when (this) {

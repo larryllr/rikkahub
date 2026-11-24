@@ -278,12 +278,16 @@ class ResponseAPI(
                 }
                 if (reasoning.isNotEmpty()) put("reasoning", reasoning)
             }
-            if (capabilities.supportEncryptedContent &&
-                (reasoningModel || capabilities.alwaysIncludeEncryptedContent)) {
-                put("include", buildJsonArray {
+            val include = buildJsonArray {
+                if (capabilities.supportEncryptedContent &&
+                    (reasoningModel || capabilities.alwaysIncludeEncryptedContent)) {
                     add("reasoning.encrypted_content")
-                })
+                }
+                if (capabilities.supportsWebSearchSources && BuiltInTools.Search in params.model.tools) {
+                    add("web_search_call.action.sources")
+                }
             }
+            if (include.isNotEmpty()) put("include", include)
             // 会话 ID 作为 prompt_cache_key，同一会话的请求能命中提示缓存
             params.sessionId?.let { put("prompt_cache_key", it) }
 
@@ -797,6 +801,7 @@ private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
 internal data class ResponseProviderCapabilities(
     val supportsReasoningSummary: Boolean = true,
     val supportEncryptedContent: Boolean = true,
+    val supportsWebSearchSources: Boolean = false,
     // 不为 null 时 system 提示以这个角色的消息放在 input 开头，不用 instructions 字段
     val systemMessageRole: String? = null,
     // 是否接受 temperature、top_p 和 max_output_tokens
@@ -812,6 +817,7 @@ internal data class ResponseProviderCapabilities(
 
 internal fun resolveResponseProviderCapabilities(host: String): ResponseProviderCapabilities {
     return when (host) {
+        "api.openai.com" -> ResponseProviderCapabilities(supportsWebSearchSources = true)
         "ark.cn-beijing.volces.com" -> ResponseProviderCapabilities(
             supportsReasoningSummary = false,
             supportEncryptedContent = false

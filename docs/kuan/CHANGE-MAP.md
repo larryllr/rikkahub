@@ -1,6 +1,6 @@
 # 宽 API 原生候选：改动地图
 
-日期：2026-11-24（北京时间）。以 2.0.3 源码为准。应用内不放维护说明。基准提交 `2435dbdf4690fe26d424b8d1ab778bcde9c6cd75`。
+日期：2026-11-24（北京时间）。以 2.0.4 源码为准。应用内不放维护说明。基准提交 `2435dbdf4690fe26d424b8d1ab778bcde9c6cd75`。
 
 | 编号 | 目的与精确位置 | 依赖、撤销及验收 |
 | --- | --- | --- |
@@ -24,6 +24,11 @@
 | V02 | `app/src/androidTest/.../data/kuan/{KuanNativeContractTest,KuanFollowUpsTest}.kt` 和 `tools/kuan-presentation/presentation.test.mjs`。 | 以合成账号核对分组密钥、原件、回执、重复导入和实际 Compose 交互。脚本覆盖前后链接、源码、公式、多题和手填输入。 |
 | B02 | `QuickStartCard.kt`、`QuickStartComponents.kt`：首卡主入口是宽 API 账号；下方「自定义」直达原快速入门。 `kuan_logo.png`、`ic_launcher.xml`、`kuan_launcher_foreground.xml`、`SettingAboutPage.kt` 和 `ConversationExport.kt` 复用经典版原图与原生控件。 | 回退入口和图标不需要数据迁移。保留 RikkaHub 原快速入门页、设置页和版权链接。 |
 | U02 | `app/build.gradle.kts`、`distribution/android.html`、`tools/publish_kuan_android.py` 分发 2.0 和经典版。 | 不覆盖旧包、旧清单或 Chat 指针。撤回发行只移走此版新页面及原生渠道目录；不降低已安装应用的 versionCode。 |
+| I02 | `KuanStudioTasks.kt` 划分本机任务状态与工作台生命周期；`KuanStudioPage.kt`、`assets/kuan-studio/host.js` 与工作台源码复用该回执。 | 停止与恢复按本机任务 ID，页面重建不重复提交；不宣称是服务器接单。回退前处理未领取的任务，不单独回退 JS 或 Android bridge。 |
+| I03 | `KuanChatImageDialog.kt`、`KuanChatImage.kt`、`ChatRequestFactory.kt` 与 `KuanProvider.kt`。 | 长按消息，选择目录返回的生图模型，发送选中消息之前的上下文；GPT/Work 分组不串用，历史附件按原句柄上传。不自动变成普通聊天或隐式切组。 |
+| H02 | `KuanCloudHistory.kt`、`KuanHistory.kt::syncConversation`、`KuanFiles.kt::publishCloudArchive`。 | 明确发起才用经典云快照；确认修订、账号、附件和上传摘要，冲突保留，失败不覆盖。入口可撤，已写云内容必须通过正常备份机制管理。 |
+| P02 | `KuanWebCards.kt`、`KuanWebReplyCards.kt`、`WebSearchPresentation.kt`、`WebSearchResultDetails.kt` 与 `KuanStreamDecoder.closeFrames`。 | 原生呈现图片组和实际来源，并保留问答与引用。只接受经过校验的展示数据；不让卡片元数据变成下一轮工具调用。前台 EOF 要有 Responses 终态。 |
+| W01 | `ClassicProjectArchive.kt`、`WorkspaceRepository.kt::importClassicProject` 与 `WorkspacePage.kt`。 | 用新工作区安装文件归档，不执行其中代码、不导入 SSH 或审批；异常仅清理本次未登记的目录。 |
 
 ## 分阶段撤回方法
 

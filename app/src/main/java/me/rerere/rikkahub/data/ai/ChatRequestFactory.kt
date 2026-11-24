@@ -47,6 +47,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.kuan.KuanLane
 import me.rerere.rikkahub.data.kuan.finishKuanPresentation
 import me.rerere.rikkahub.data.kuan.KuanPresentationPreview
+import me.rerere.rikkahub.data.kuan.kuanChatImage
 import me.rerere.rikkahub.data.kuan.withKuanQuestionHistory
 import me.rerere.rikkahub.data.kuan.kuanRoute
 import me.rerere.rikkahub.data.model.Assistant
@@ -107,7 +108,7 @@ class ChatRequestFactory(
     )
 
     /** 解析本轮的助手、模型、记忆和工具；MCP 服务名不合法时抛出 InvalidMcpServerNamesException */
-    suspend fun createContext(settings: Settings, conversation: Conversation): ChatTurnContext {
+    suspend fun createContext(settings: Settings, conversation: Conversation, imageOnly: Boolean = false): ChatTurnContext {
         // 模型、思考级别、搜索、工具等以会话上固定的配置为准
         val assistant = settings.getAssistantOf(conversation)
         val model = settings.getChatModelOf(conversation)
@@ -122,7 +123,7 @@ class ChatRequestFactory(
             conversationSystemPrompt = conversation.customSystemPrompt,
             workspaceCwd = conversation.workspaceCwd,
             memories = if (assistant.enableMemory) memoryRepository.getFiles(assistant.memoryId) else emptyList(),
-            tools = if (provider.kuanRoute()?.lane == KuanLane.WEB) emptyList() else chatToolFactory.createTools(
+            tools = if (imageOnly || provider.kuanRoute()?.lane == KuanLane.WEB) emptyList() else chatToolFactory.createTools(
                 settings = settings,
                 assistant = assistant,
                 model = model,
@@ -145,6 +146,9 @@ class ChatRequestFactory(
         pauseAfterTools: (UIMessage) -> Boolean = { false },
         backgroundNode: Uuid? = null,
     ): Pair<AgentRequest, AgentHooks> {
+        val managed = turn.providerSetting.kuanRoute()
+        val image = managed?.let { messages.lastOrNull()?.kuanChatImage() }
+        val effectiveTools = if (image == null) turn.tools else emptyList()
         val request = AgentRequest(
             provider = usageRecorder.wrap(
                 providerManager.getProviderByType(turn.providerSetting),
@@ -152,17 +156,17 @@ class ChatRequestFactory(
             ),
             providerSetting = turn.providerSetting,
             messages = messages,
-            tools = turn.tools,
+            tools = effectiveTools,
             stream = turn.assistant.streamOutput,
-            retry = if (turn.providerSetting.kuanRoute() == null) turn.settings.retryPolicy() else RetryPolicy.NONE,
+            retry = if (managed == null) turn.settings.retryPolicy() else RetryPolicy.NONE,
         )
-        val presentation = turn.providerSetting.kuanRoute()?.let { KuanPresentationPreview(context) }
+        val presentation = managed?.let { KuanPresentationPreview(context) }
         val hooks = object : AgentHooks {
             override suspend fun prepareStep(messages: List<UIMessage>): StepRequest {
                 Log.i(TAG, "prepareStep: ${turn.model.id}")
-                val step = buildStep(turn, messages, processingStatus)
+                val step = buildStep(turn, image?.context(messages) ?: messages, processingStatus, effectiveTools)
                 val anchor = messages.lastOrNull()?.takeIf { it.role == MessageRole.USER }?.id
-                return if (turn.providerSetting.kuanRoute() != null && turn.tools.isEmpty() && backgroundNode != null && anchor != null) {
+                return if (managed != null && effectiveTools.isEmpty() && backgroundNode != null && anchor != null) {
                     step.copy(params = step.params.copy(backgroundTarget = BackgroundTarget(backgroundNode, anchor)))
                 } else step
             }
@@ -242,6 +246,7 @@ class ChatRequestFactory(
         turn: ChatTurnContext,
         messages: List<UIMessage>,
         processingStatus: MutableStateFlow<String?> = MutableStateFlow(null),
+        tools: List<Tool> = turn.tools,
     ): StepRequest {
         val assistant = turn.assistant
         val requestMessages = buildList {
@@ -262,7 +267,7 @@ class ChatRequestFactory(
                     append(buildMemoryPrompt(turn.memories))
                 }
                 // 工具prompt
-                turn.tools.forEach { tool ->
+                tools.forEach { tool ->
                     appendLine()
                     append(tool.systemPrompt(turn.model, messages))
                 }
@@ -297,7 +302,7 @@ class ChatRequestFactory(
             temperature = assistant.temperature,
             topP = assistant.topP,
             maxTokens = assistant.maxTokens,
-            tools = turn.tools,
+            tools = tools,
             reasoningLevel = assistant.reasoningLevel,
             providerReasoningEffort = assistant.providerReasoningEffort,
             customHeaders = buildList {

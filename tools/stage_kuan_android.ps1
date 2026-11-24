@@ -6,8 +6,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $stageRoot = [IO.Path]::GetFullPath($Stage)
-$version = '2.0.3'
-$code = 6
+$version = '2.0.4'
+$code = 7
 $package = 'com.kuanapi.app.nativepreview'
 $origin = 'https://kuanapi.kuankuan.de5.net/downloads/mobile-native'
 $certificate = '184f05de36ac9a6e5807f26bef7f848f1b65f849058d461b234da42c4e7ecf59'
@@ -84,7 +84,7 @@ $hashes | Set-Content -Encoding ascii -LiteralPath (Join-Path $release 'SHA256SU
     version = $version
     versionCode = $code
     publishedAt = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
-    changelog = 'Image Studio fits the full Android workspace. Chat restores interactive follow-ups and collapsible sources, including recovered replies and imported history.'
+    changelog = 'Generate or edit images from a chat message, recover Image Studio tasks after leaving the page, merge a chat with classic cloud history, and import classic project files. Web replies now include search activity, expandable image groups, and source links.'
     downloads = @($downloads)
 } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM -LiteralPath (Join-Path $channel 'latest.json')
 $hashes

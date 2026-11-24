@@ -35,6 +35,7 @@ import me.rerere.rikkahub.data.kuan.KuanHistory
 import me.rerere.rikkahub.data.kuan.KuanOperations
 import me.rerere.rikkahub.data.kuan.KuanProvider
 import me.rerere.rikkahub.data.kuan.KuanSession
+import me.rerere.rikkahub.data.kuan.KuanStudioTasks
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.AppDatabaseFactory
 import me.rerere.rikkahub.data.db.fts.MessageFtsManager
@@ -74,6 +75,7 @@ val dataSourceModule = module {
     single { KuanFiles(get(), get(), get(), get()) }
     single { KuanHistory(get(), get(), get(), get(), get(), get()) }
     single { KuanProvider(get(), get(), get(), get(), get()) }
+    single { KuanStudioTasks(get(), get(), get()) }
 
     single {
         val context: Context = get()

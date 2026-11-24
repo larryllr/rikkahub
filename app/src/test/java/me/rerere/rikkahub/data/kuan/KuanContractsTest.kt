@@ -12,6 +12,7 @@ import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.providers.openai.OpenAIWire
 import me.rerere.ai.ui.StreamChunk
+import me.rerere.ai.ui.StreamChunkHandler
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessageAnnotation
 import me.rerere.ai.ui.UIMessagePart
@@ -89,6 +90,59 @@ class KuanContractsTest {
         assertEquals(emptyList<StreamChunk>(), decoder.accept("[DONE]"))
         val truncated = runCatching { KuanStreamDecoder(wire, false).accept("[DONE]") }.exceptionOrNull()
         assertTrue(truncated is KuanProtocolError)
+    }
+
+    @Test
+    fun responsesCanCloseAfterTheirDocumentedTerminalEvent() {
+        val decoder = KuanStreamDecoder(wire, true)
+        assertTrue(runCatching { decoder.closeFrames() }.exceptionOrNull() is KuanProtocolError)
+        val terminal = decoder.accept("""{"type":"response.completed","response":{"id":"test","status":"completed","output":[]}}""")
+        assertTrue(terminal.single() is StreamChunk.Finish)
+        assertTrue(decoder.closeFrames().isEmpty())
+        assertTrue(decoder.terminated)
+        assertTrue(decoder.accept("[DONE]").isEmpty())
+    }
+
+    @Test
+    fun explicitImageActionKeepsTheOriginalPrefixAndDiscardsLaterTurns() {
+        val original = UIMessage.user("Read the original")
+        val picked = UIMessage(role = MessageRole.ASSISTANT, parts = listOf(UIMessagePart.Image("file:///upload/original.png")))
+        val unrelated = UIMessage.user("Use an unrelated image")
+        val action = KuanChatImage(picked.id, 7, "from-real-catalog")
+        val request = UIMessage(role = MessageRole.USER, parts = listOf(action.prompt("Edit the background")))
+        assertEquals(action, request.kuanChatImage())
+        assertEquals(listOf(original, picked, request), action.context(listOf(original, picked, unrelated, request)))
+        assertTrue(runCatching { action.context(listOf(original, unrelated, request)) }.exceptionOrNull() is KuanProtocolError)
+    }
+
+    @Test
+    fun nativeWebImagesKeepExactSnapshotAndSearchNeverPretendsToHaveFinished() {
+        val decoder = KuanStreamDecoder(wire, false)
+        val chunks = decoder.accept("""{"type":"kuan.web_tool.in_progress","tool":"web_search"}""") +
+            decoder.accept("""{"type":"kuan.web_tool.in_progress","tool":"web_search"}""") +
+            decoder.accept("""{"type":"kuan.web_tool.completed","tool":"kuan_web_search","status":"ok"}""") +
+            decoder.accept("""{"type":"kuan.web_tool.in_progress","tool":"open_url"}""") +
+            decoder.accept("""{"id":"x","message_id":"answer","choices":[{"delta":{"content":"Results:"}}]}""") +
+            decoder.accept("""{"id":"x","choices":[{"delta":{"kuan_native_presentation":{"source":"chatgpt","version":1,"message_id":"answer",
+                "components":[{"kind":"AsyncImageGroup","label":"Examples","images":[
+                    {"url":"https://example.com/one.png","source_url":"https://example.com/first","title":"First"},
+                    {"url":"https://name:password@example.com/secret.png"},
+                    {"url":"https://192.168.1.1/private.png"}]},
+                    {"kind":"Chart","label":"Breakdown","url":"https://example.org/chart"},
+                    {"kind":"Map","label":"Missing payload"}
+                ]}}}]}""".replace("\n", "")) +
+            decoder.accept("""{"id":"x","choices":[{"delta":{},"finish_reason":"stop"}]}""") +
+            decoder.accept("[DONE]")
+        val handler = StreamChunkHandler()
+        val message = chunks.fold(listOf(UIMessage.user("Search"))) { rows, chunk -> handler.handle(rows, chunk) }.last()
+        val tools = message.parts.filterIsInstance<UIMessagePart.ServerTool>()
+        assertEquals(listOf("web_search", "open_url"), tools.take(2).map { it.toolName })
+        assertTrue(tools[0].isFinished)
+        assertEquals(me.rerere.ai.ui.ServerToolStatus.FAILED, tools[1].status)
+        val cards = tools.last().webCards()
+        assertEquals(listOf("AsyncImageGroup", "Chart"), cards.map { it.kind })
+        assertEquals("First", cards.first().images.single().title)
+        assertEquals("https://example.com/first", cards.first().images.single().source)
     }
 
     @Test

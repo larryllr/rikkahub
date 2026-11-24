@@ -130,16 +130,25 @@ internal fun UIMessagePart.Text.kuanFormGroups() = metadata?.array(GROUPS).orEmp
 
 internal fun readKuanCitation(value: JsonElement, native: Boolean = false): UIMessageAnnotation.UrlCitation? {
     val row = value as? JsonObject ?: return null
-    val raw = row.string("url")?.takeIf { it.length in 1..8192 && it.none { ch -> ch <= '\u001f' || ch == '\\' } } ?: return null
-    val url = raw.toHttpUrlOrNull()?.takeIf { it.username.isEmpty() && it.password.isEmpty() } ?: return null
-    if (native && (!url.isHttps || '.' !in url.host || url.host.substringAfterLast('.').none(Char::isLetter) ||
+    val raw = row.string("url")
+    val url = (if (native) publicKuanPresentationUrl(raw)?.toHttpUrlOrNull() else kuanPresentationUrl(raw)) ?: return null
+    val title = row.string("title").orEmpty().filterNot(Char::isISOControl).trim().take(500).ifBlank { url.host }
+    return UIMessageAnnotation.UrlCitation(title = title, url = url.toString())
+}
+
+private fun kuanPresentationUrl(raw: String?) =
+    raw?.takeIf { it.length in 1..8192 && it.none { ch -> ch <= '\u001f' || ch == '\\' } }
+        ?.toHttpUrlOrNull()?.takeIf { it.username.isEmpty() && it.password.isEmpty() }
+
+internal fun publicKuanPresentationUrl(raw: String?): String? {
+    val url = kuanPresentationUrl(raw) ?: return null
+    if (!url.isHttps || url.port != 443 || '.' !in url.host || url.host.substringAfterLast('.').none(Char::isLetter) ||
             url.host.substringAfterLast('.') in setOf("local", "internal", "localhost") ||
             url.queryParameterNames.any { it.lowercase().let { name ->
                 name in setOf("token", "access_token", "authorization", "signature") || name.startsWith("x-amz-")
-            } })
+            } }
     ) return null
-    val title = row.string("title").orEmpty().filterNot(Char::isISOControl).trim().take(500).ifBlank { url.host }
-    return UIMessageAnnotation.UrlCitation(title = title, url = url.toString())
+    return url.toString()
 }
 
 internal fun UIMessage.withKuanQuestionHistory(): UIMessage {

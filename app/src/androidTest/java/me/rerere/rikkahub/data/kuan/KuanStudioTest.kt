@@ -21,6 +21,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -93,6 +94,8 @@ class KuanStudioTest {
             }
         }
         val studio = KuanStudio(activity, session, catalog, api, profile.scope, session.state.value.epoch, group)
+        val tasks = KuanStudioTasks(isolated, scope, session, foreground = false)
+        val visible = mutableStateOf(true)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val exported = mutableListOf<android.net.Uri>()
         try {
@@ -103,7 +106,7 @@ class KuanStudioTest {
             compose.setContent {
                 MaterialTheme {
                     CompositionLocalProvider(LocalNavController provides Navigator(mutableListOf())) {
-                        KuanStudioPage(session, catalog, api)
+                        if (visible.value) KuanStudioPage(session, catalog, api, tasks)
                     }
                 }
             }
@@ -207,6 +210,27 @@ class KuanStudioTest {
             })()"""))
             eventually("cancelled task") { js("Boolean(document.querySelector('.kw-task.cancelled'))") == "true" }
             assertTrue("Stopping cancelled the image request", fixture.stopObserved.await(5, TimeUnit.SECONDS))
+
+            if (InstrumentationRegistry.getArguments().getString("studioCapture") != "true") {
+                if (narrow) openEditor()
+                prompt("Keep working when I leave")
+                js("document.querySelector('.kw-composer .kw-generate').click()")
+                assertTrue(fixture.backgroundStarted.await(10, TimeUnit.SECONDS))
+                try {
+                    instrumentation.runOnMainSync { visible.value = false }
+                    compose.mainClock.advanceTimeBy(64)
+                    eventually("the Studio WebView was disposed") { js("true") == "null" }
+                } finally {
+                    fixture.finishBackground.countDown()
+                }
+                instrumentation.runOnMainSync { visible.value = true }
+                compose.mainClock.advanceTimeBy(64)
+                eventually("the reopened Studio mounted") { js("Boolean(document.querySelector('.kw-header nav'))") == "true" }
+                eventually("reopened Studio claimed the original result") {
+                    js("""Array.from(document.querySelectorAll('.kw-task.completed summary')).some(e=>e.textContent==='Keep working when I leave')""") == "true"
+                }
+                assertEquals(1, fixture.backgroundRequests.get())
+            }
 
             if (narrow) openEditor()
             prompt("Show upstream failure")
@@ -399,6 +423,9 @@ class KuanStudioTest {
         val fallbacks = CopyOnWriteArrayList<String>()
         val stopStarted = CountDownLatch(1)
         val stopObserved = CountDownLatch(1)
+        val backgroundStarted = CountDownLatch(1)
+        val finishBackground = CountDownLatch(1)
+        val backgroundRequests = java.util.concurrent.atomic.AtomicInteger()
         private val owner = Random.nextLong(100_000_000, 2_000_000_000)
         val png = ByteArrayOutputStream().use { bytes ->
             Bitmap.createBitmap(71, 49, Bitmap.Config.ARGB_8888).apply {
@@ -459,6 +486,13 @@ class KuanStudioTest {
                         while (!chain.call().isCanceled() && SystemClock.elapsedRealtime() < deadline) Thread.sleep(40)
                         if (chain.call().isCanceled()) stopObserved.countDown()
                         throw java.io.IOException("Fixture stopped or timed out")
+                    }
+                    if (prompt == "Keep working when I leave") {
+                        backgroundRequests.incrementAndGet()
+                        backgroundStarted.countDown()
+                        if (!finishBackground.await(75, TimeUnit.SECONDS) || chain.call().isCanceled()) {
+                            throw java.io.IOException("The background fixture was cancelled or not released")
+                        }
                     }
                     if (prompt == "Show upstream failure") raw("""{"error":{"message":"Cannot generate with studio-fixture-key"}}""", 503)
                     else raw("""{"data":[{"b64_json":"${Base64.encodeToString(png, Base64.NO_WRAP)}"}]}""")

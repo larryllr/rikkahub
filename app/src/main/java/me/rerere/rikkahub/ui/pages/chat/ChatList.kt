@@ -100,6 +100,7 @@ fun ChatList(
     onUpdateMessage: (MessageNode) -> Unit = {},
     onClickSuggestion: (String) -> Unit = {},
     onFollowUp: ((String) -> Unit)? = null,
+    onImageFromMessage: ((UIMessage) -> Unit)? = null,
     onTranslate: ((UIMessage, java.util.Locale) -> Unit)? = null,
     onClearTranslation: (UIMessage) -> Unit = {},
     onJumpToMessage: (Int) -> Unit = {},
@@ -161,6 +162,7 @@ fun ChatList(
                 onUpdateMessage = onUpdateMessage,
                 onClickSuggestion = onClickSuggestion,
                 onFollowUp = onFollowUp,
+                onImageFromMessage = onImageFromMessage,
                 onTranslate = onTranslate,
                 onClearTranslation = onClearTranslation,
                 onToolApproval = onToolApproval,
@@ -234,6 +236,7 @@ private fun ChatListNormal(
     onUpdateMessage: (MessageNode) -> Unit,
     onClickSuggestion: (String) -> Unit,
     onFollowUp: ((String) -> Unit)?,
+    onImageFromMessage: ((UIMessage) -> Unit)?,
     onTranslate: ((UIMessage, java.util.Locale) -> Unit)?,
     onClearTranslation: (UIMessage) -> Unit,
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
@@ -405,6 +408,9 @@ private fun ChatListNormal(
                             onToolApproval = onToolApproval,
                             onToolAnswer = onToolAnswer,
                             onFollowUp = onFollowUp.takeUnless { selectionState.selecting || loading },
+                            onImageFromMessage = onImageFromMessage
+                                ?.takeUnless { selectionState.selecting || loading || compressing }
+                                ?.let { action -> { action(node.currentMessage) } },
                             lastMessage = index == lastMessageIndex,
                         )
                     }

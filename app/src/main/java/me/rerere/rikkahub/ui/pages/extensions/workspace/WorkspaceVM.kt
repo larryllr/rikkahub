@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.extensions.workspace
 
+import android.content.ContentResolver
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -21,6 +23,15 @@ class WorkspaceVM(
 ) : ViewModel() {
     val workspaces = repository.listFlow()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    internal suspend fun importClassicProject(resolver: ContentResolver, uri: Uri): WorkspaceEntity {
+        require(uri.scheme == "content") { "Choose a project ZIP from Android Files" }
+        var number = 1
+        val names = workspaces.value.mapTo(HashSet()) { it.name }
+        while ("Imported project $number" in names) number++
+        return resolver.openInputStream(uri)?.use { repository.importClassicProject("Imported project $number", it) }
+            ?: error("Could not open the project archive")
+    }
 
     fun create(name: String) {
         viewModelScope.launch {
