@@ -46,8 +46,10 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.ai.ui.ServerToolStatus
 import me.rerere.ai.ui.ToolApprovalState
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.webSearchPresentation
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.BubbleChatQuestion
 import me.rerere.hugeicons.stroke.Cancel01
@@ -73,6 +75,7 @@ import kotlin.time.DurationUnit
 @Composable
 fun ChainOfThoughtScope.ChatMessageServerToolStep(tool: UIMessagePart.ServerTool) {
     val loading = !tool.isFinished
+    val web = remember(tool) { tool.webSearchPresentation() }
     ChainOfThoughtStep(
         icon = {
             if (loading) {
@@ -88,7 +91,13 @@ fun ChainOfThoughtScope.ChatMessageServerToolStep(tool: UIMessagePart.ServerTool
         },
         label = {
             Text(
-                text = stringResource(R.string.chat_message_tool_call_generic, tool.toolName),
+                text = if (web != null) {
+                    stringResource(when (tool.status) {
+                        ServerToolStatus.IN_PROGRESS -> R.string.chat_message_web_search_running
+                        ServerToolStatus.COMPLETED -> R.string.use_web_search
+                        ServerToolStatus.FAILED -> R.string.chat_message_web_search_failed
+                    })
+                } else stringResource(R.string.chat_message_tool_call_generic, tool.toolName),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.shimmer(isLoading = loading),
@@ -96,6 +105,9 @@ fun ChainOfThoughtScope.ChatMessageServerToolStep(tool: UIMessagePart.ServerTool
                 overflow = TextOverflow.Ellipsis,
             )
         },
+        content = if (web != null && (web.queries.isNotEmpty() || web.sources.isNotEmpty())) {
+            { WebSearchResultDetails(web) }
+        } else null,
     )
 }
 

@@ -1107,6 +1107,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="update_card_unknown_error">未知错误</string>
   <string name="upload_file">上传文件</string>
   <string name="use_web_search">网络搜索</string>
+  <string name="chat_message_web_search_running">正在搜索网页</string>
+  <string name="chat_message_web_search_failed">网页搜索失败</string>
   <string name="user_default_name">用户</string>
   <string name="video">视频</string>
   <string name="setting_theme_page_import_theme">导入</string>

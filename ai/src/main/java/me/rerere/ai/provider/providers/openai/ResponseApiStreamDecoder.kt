@@ -18,7 +18,9 @@ import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.toMetadata
 import me.rerere.ai.util.json
 import me.rerere.ai.util.parseErrorDetail
+import me.rerere.common.http.jsonArrayOrNull
 import me.rerere.common.http.jsonObjectOrNull
+import me.rerere.common.http.jsonPrimitiveOrNull
 
 internal class ResponseApiStreamDecoder : StreamChunkDecoder {
     private val state = ResponseStreamState()
@@ -213,6 +215,25 @@ internal class ResponseApiStreamDecoder : StreamChunkDecoder {
         }
 
         return buildList {
+            // The terminal snapshot can contain sources omitted from output_item.done.
+            response?.get("output")?.jsonArrayOrNull.orEmpty().forEach { output ->
+                val row = output.jsonObjectOrNull ?: return@forEach
+                if (row["type"]?.jsonPrimitiveOrNull?.contentOrNull != "web_search_call") return@forEach
+                if (row["id"]?.jsonPrimitiveOrNull?.contentOrNull.isNullOrBlank()) return@forEach
+                if (row["status"] != null && row["status"]?.jsonPrimitiveOrNull == null) return@forEach
+                val tool = row.toOpenAIServerTool()
+                val sources = (tool.input as? JsonObject)?.get("sources")?.jsonArrayOrNull
+                if (state.hasEndedServerTool(tool.toolCallId) && sources.isNullOrEmpty()) return@forEach
+                addAll(state.startServerTool(tool))
+                addAll(state.endServerTool(
+                    id = tool.toolCallId,
+                    input = tool.input,
+                    output = tool.output,
+                    status = tool.status.takeUnless { it == ServerToolStatus.IN_PROGRESS }
+                        ?: if (status == "completed") ServerToolStatus.COMPLETED else ServerToolStatus.FAILED,
+                    metadata = tool.metadata,
+                ))
+            }
             parseUsage(response?.get("usage") as? JsonObject)?.let { add(StreamChunk.Usage(it)) }
             addAll(state.finish(
                 finishReason = finishReason,
@@ -364,6 +385,8 @@ internal class ResponseApiStreamDecoder : StreamChunkDecoder {
 
         fun startServerTool(tool: me.rerere.ai.ui.UIMessagePart.ServerTool): List<StreamChunk> =
             startServerTool(tool.toolCallId, tool.toolName, tool.input, tool.metadata)
+
+        fun hasEndedServerTool(id: String) = id in knownServerToolIds && id !in openServerToolIds
 
         fun startServerTool(
             id: String,
