@@ -26,6 +26,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -41,7 +42,9 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Clock
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.ServerToolStatus
@@ -195,6 +198,108 @@ class KuanReplyLayoutTest {
         )
         assertFalse(finished.needsKuanPresentation())
         assertEquals(finished, finishKuanPresentation(context, finished))
+    }
+
+    @Test
+    fun standaloneBadgeAndBoxedEquationRenderInOrderAfterReopening() {
+        val before = "\u6240\u4ee5\uff1a"
+        val label = "\u7b54\u6848"
+        val after = "\u6ce8\u610f\uff1a"
+        val equation = "$$\n\\boxed{\\frac{\\Delta U}{\\Delta I}=-r}\n$$"
+        val raw = "$before\n\n<badge color=\"success\" size=\"lg\">$label</badge>\n\n$equation\n\n$after"
+        val old = UIMessage(role = MessageRole.ASSISTANT, parts = listOf(UIMessagePart.Text(raw, buildJsonObject {
+            put("kuan:presentation_v2", true)
+            put("kuan:layout_v1", true)
+        })))
+        assertTrue(old.needsKuanPresentation())
+        val finished = runBlocking { finishKuanPresentation(context, old) }
+        assertEquals("$before\n\n**$label**\n\n$equation\n\n$after", (finished.parts.single() as UIMessagePart.Text).text)
+        assertFalse(finished.needsKuanPresentation())
+        val dark = context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val colors = if (dark) darkColorScheme() else lightColorScheme()
+        compose.setContent {
+            MaterialTheme(colorScheme = colors) {
+                CompositionLocalProvider(LocalSettings provides Settings()) {
+                    Surface(Modifier.fillMaxSize()) {
+                        Column(Modifier.safeDrawingPadding().padding(16.dp)) {
+                            MessagePartsBlock(
+                                assistant = null,
+                                role = MessageRole.ASSISTANT,
+                                model = null,
+                                parts = finished.parts,
+                                annotations = finished.annotations,
+                                loading = false,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        val labelNode = compose.onNodeWithText(label)
+        labelNode.assertIsDisplayed()
+        compose.onNodeWithText("<badge", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("\\boxed", substring = true).assertDoesNotExist()
+        val opening = compose.onNodeWithText(before).fetchSemanticsNode().boundsInRoot
+        val answer = labelNode.fetchSemanticsNode().boundsInRoot
+        assertTrue(opening.bottom <= answer.top)
+        compose.waitUntil(5000) {
+            val image = compose.onRoot().captureToImage().toPixelMap()
+            val below = compose.onNodeWithText(after).fetchSemanticsNode().boundsInRoot.top.toInt()
+            val background = colors.surface.toArgb()
+            var ink = 0
+            for (y in answer.bottom.toInt() until minOf(below, image.height)) {
+                for (x in image.width / 4 until image.width * 3 / 4) {
+                    if (image[x, y].toArgb() != background && ++ink >= 24) return@waitUntil true
+                }
+            }
+            false
+        }
+        capture(if (dark) "badge-math-dark" else "badge-math")
+    }
+
+    @Test
+    fun streamedAndSavedPresentationUseTheSameTagsWithoutChangingExistingParts() = runBlocking {
+        val simple = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())
+        for (partial in listOf("<ba", "<badge color=\"suc", "&lt;ba", "&lt;badge color=&quot;suc", "</bad")) {
+            val preview = KuanPresentationPreview(context).render(simple.copy(parts = listOf(UIMessagePart.Text("Start.\n\n$partial"))))
+            assertEquals("Start.", (preview.parts.single() as UIMessagePart.Text).text)
+        }
+        val search = UIMessagePart.ServerTool("ws", "web_search", buildJsonObject { put("query", "Fixture") },
+            status = ServerToolStatus.COMPLETED)
+        val split = simple.copy(parts = listOf(UIMessagePart.Text("Start.\n\n<ba"), search, UIMessagePart.Text("dge/>")))
+        assertTrue(split.needsKuanPresentation())
+        assertEquals(listOf("Start."), finishKuanPresentation(context, split).parts.filterIsInstance<UIMessagePart.Text>().map { it.text })
+
+        val code = listOf(
+            "\u0060<badge>literal</badge>\u0060",
+            "Show \u0060\u0060<badge label=\"\u0060\">quoted</badge>\u0060\u0060.",
+            "\u0060\u0060\u0060html\n<badge>demo</badge>\n\u0060\u0060\u0060\u0060",
+        ).joinToString("\n\n")
+        val url = "https://img.example.com/figure.png"
+        val form = "<button onClick={()=>GenUI.issueNewTurn(\"yes\")}>Yes</button>"
+        val original = finishKuanPresentation(context, simple.copy(parts = listOf(UIMessagePart.Text(form))))
+        val originalForm = original.parts.single() as UIMessagePart.Text
+        val metadata = buildJsonObject {
+            requireNotNull(originalForm.metadata).filterKeys { it != "kuan:layout_v2" }.forEach { (key, value) -> put(key, value) }
+            put("kuan:layout_v1", true)
+            put("kuan:inline_images", buildJsonArray { add(url) })
+        }
+        val citation = UIMessageAnnotation.UrlCitation("Reference", "https://example.com/article")
+        val old = simple.copy(
+            parts = listOf(UIMessagePart.Text("$code\n\n![]($url)\n\n&lt;badge color=&quot;success&quot;&gt;Real&lt;/badge&gt;", metadata), search),
+            annotations = listOf(citation),
+        )
+        val result = finishKuanPresentation(context, old)
+        val text = result.parts.filterIsInstance<UIMessagePart.Text>().single()
+        assertEquals("$code\n\n![]($url)\n\n**Real**", text.text)
+        assertEquals(listOf(url), text.inlineKuanWebImages())
+        assertEquals(form, text.kuanFormSource())
+        assertEquals(originalForm.kuanFormGroups(), text.kuanFormGroups())
+        assertEquals(listOf(citation), result.annotations)
+        assertEquals(search, result.parts.last())
+        assertEquals(result, finishKuanPresentation(context, result))
+        assertFalse(old.copy(parts = listOf(UIMessagePart.Text(code, metadata))).needsKuanPresentation())
     }
 
     private fun capture(name: String) {

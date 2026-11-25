@@ -7,6 +7,60 @@ let cacheCharacters = 0;
 const OPEN = { '(': ')', '[': ']', '{': '}' };
 const CLOSE = new Set(Object.values(OPEN));
 
+const tags = new Map(Object.entries({
+  heading: ['title', 'subtitle', 'heading', 'subheading', 'header'],
+  math: ['formula', 'equation', 'math', 'mathml', 'math-block'],
+  grid: ['grid', 'grid-item'],
+  badge: ['badge'],
+  wrapper: [
+    'box', 'text', 'stack', 'row', 'column', 'card', 'callout', 'rich-text', 'divider', 'spacer',
+    'icon', 'list', 'list-item', 'radio-group', 'radio', 'select', 'textarea', 'input',
+    'checkbox', 'button', 'option', 'asyncimagegroup', 'asyncimage', 'image', 'entity', 'link', 'cite', 'map', 'chart',
+  ],
+}).flatMap(([kind, names]) => names.map(name => [name, kind])));
+const tagNames = [...tags.keys()].join('|');
+export const presentationGrammar = {
+  tag: String.raw`(?<!\\)(?:<|&lt;)/?(?:${tagNames})(?=[\s/>&]|$)`,
+  control: /\{@body\b|GenUI\s*\.\s*issueNewTurn|__dil\.jsx[s]?\s*\(|[\uE200-\uE20F]|\\u(?:\{e20[0-9a-f]\}|e20[0-9a-f])/iu.source,
+  partialTag: /(?<!\\)(?:(?:<|&lt;)\/?([a-z][\w.-]*)?|&lt?)$/iu.source,
+  // A closing fence may be longer than its opener; inline spans use equal runs.
+  code: /^[ \t]{0,3}(`{3,})(?!`)[^\r\n]*(?:\r?\n|$)[\s\S]*?(?:^[ \t]{0,3}\1`*[ \t]*(?=\r?$)|(?![\s\S]))|^[ \t]{0,3}(~{3,})(?!~)[^\r\n]*(?:\r?\n|$)[\s\S]*?(?:^[ \t]{0,3}\2~*[ \t]*(?=\r?$)|(?![\s\S]))|(?<!`)(`+)(?!`)[^\r\n]*?(?:(?<!`)\3(?!`)|(?=\r?$))/gmu.source,
+};
+const tagMarker = new RegExp(presentationGrammar.tag, 'iu');
+const controlMarker = new RegExp(presentationGrammar.control, 'iu');
+const partialTag = new RegExp(presentationGrammar.partialTag, 'iu');
+const escapedTagStart = new RegExp(String.raw`(?<!\\)&lt;(/?(?:${tagNames}))(?=[\s/&]|$)`, 'giu');
+const contextualWrapper = /^(?:div|section|article|form|fieldset|legend|label)$/iu;
+
+// Decode only the delimiters of known protocol tags, never the surrounding Markdown.
+function decodeEscapedTags(source, streaming) {
+  const boundaries = /&(?:lt|gt|quot|apos|#34|#39|#x22|#x27);|[<"']/giu;
+  const quotes = /&(?:quot|apos|#34|#39|#x22|#x27);/giu;
+  const decodeQuote = value => /^&(?:quot|#34|#x22);$/iu.test(value) ? '"' : "'";
+  let result = '', cursor = 0;
+  for (const match of source.matchAll(escapedTagStart)) {
+    if (match.index < cursor) continue;
+    const start = match.index + match[0].length;
+    boundaries.lastIndex = start;
+    let quote = '', boundary;
+    while ((boundary = boundaries.exec(source))) {
+      const token = boundary[0].toLowerCase();
+      if (token === '<' || token === '&lt;') break;
+      if (token === '&gt;') {
+        if (quote) continue;
+        result += source.slice(cursor, match.index) + '<' + match[1]
+          + source.slice(start, boundary.index).replace(quotes, decodeQuote) + '>';
+        cursor = boundaries.lastIndex;
+        break;
+      }
+      const mark = token.startsWith('&') ? decodeQuote(token) : token;
+      if (!quote || mark === quote) quote = quote ? '' : mark;
+    }
+    if (!boundary && streaming) return result + source.slice(cursor, match.index).trimEnd();
+  }
+  return result + source.slice(cursor);
+}
+
 function safePresentationURL(value) {
   if (typeof value !== 'string' || value.length > 8192 || /[\u0000\r\n\\]/u.test(value)) return '';
   try {
@@ -70,9 +124,15 @@ function resolveRichPresentation(value, presentation, streaming, history = false
       return '\n\n<figure class="kuan-native-media" data-media-key="' + key + '" data-media-signature="' + signature + '" data-media-state="loading"><a href="' + escapePresentationHTML(image.url) + '" target="_blank" rel="noopener noreferrer"><img src="' + escapePresentationHTML(image.thumbnail || image.url) + '" alt="' + title + '" loading="lazy" decoding="async" referrerpolicy="no-referrer" width="360" height="240"><span class="kuan-native-media-error" role="status">图片未能加载，可打开原图</span></a><figcaption>' + title + source + '</figcaption></figure>\n\n';
     }).join('');
   };
-  const input = nativeImage ? decodeLiteralUnicodeEscapes(code.masked) : code.masked;
+  let input = decodeEscapedTags(code.masked, streaming);
+  if (streaming) {
+    const fragment = partialTag.exec(input);
+    if (fragment && (!fragment[1] || [...tags.keys()].some(name => name.startsWith(fragment[1].toLowerCase()))))
+      input = input.slice(0, fragment.index).trimEnd();
+  }
+  if (nativeImage) input = decodeLiteralUnicodeEscapes(input);
   let output = '', cursor = 0;
-  for (const match of input.matchAll(/<(AsyncImageGroup|AsyncImage|Image|Cite|Entity|Link|Map|Chart)\b/gu)) {
+  for (const match of input.matchAll(/(?<!\\)<(AsyncImageGroup|AsyncImage|Image|Cite|Entity|Link|Map|Chart)(?=[\s/>]|$)/gu)) {
     const start = match.index;
     if (start < cursor) continue;
     let end = tagEnd(input, start);
@@ -124,7 +184,7 @@ function resolveRichPresentation(value, presentation, streaming, history = false
       return source ? '<a class="kuan-native-citation" href="' + escapePresentationHTML(source.url) + '" target="_blank" rel="noopener noreferrer">' + escapePresentationHTML(source.title || new URL(source.url).hostname) + '</a>' : [];
     }).join(' · ');
   });
-  return code.restore(output);
+  return code.restore(output === input ? output : output.replace(/\n{3,}/gu, '\n\n').trim());
 }
 
 function unquote(value) {
@@ -308,7 +368,7 @@ function normalizeProtocolCodeSegment(segment) {
 
 function maskCode(source, normalizePresentation = true) {
   const saved = [];
-  const masked = source.replace(/^[ \t]{0,3}(`{3,}|~{3,})[^\r\n]*(?:\r?\n|$)[\s\S]*?(?:^[ \t]{0,3}\1[ \t]*(?=\r?$)|(?![\s\S]))|(`+)[^`\r\n]*?\2(?!`)|`[^`\r\n]*(?:`|$)/gmu, segment => {
+  const masked = source.replace(new RegExp(presentationGrammar.code, 'gmu'), segment => {
     const index = saved.push(normalizePresentation ? normalizeProtocolCodeSegment(segment) : segment) - 1;
     return `\uE100KUAN_CODE_${index}\uE101`;
   });
@@ -455,41 +515,36 @@ function turnExpression(handler) {
   return handler.slice(open + 1, end - 1);
 }
 
-const RICH_TITLE_TAG = '(?:title|subtitle|heading|subheading|header)';
-const RICH_MATH_TAG = '(?:formula|equation|math|mathml|math-block)';
-const RICH_GRID_TAG = /^(?:grid|grid-item)$/iu;
-
 function richMarkupText(value) {
-  const source = stripPrivateRichReferences(String(value || ''))
-    // Some bridges HTML-escape the protocol before it reaches the client.
-    .replace(/&lt;(\/?)(title|subtitle|heading|subheading|header)\b([^&]*?)&gt;/giu, '<$1$2$3>')
-    .replace(/&lt;(\/?)(grid(?:-item)?)(?=[\s/&])([^&]*?)&gt;/giu, '<$1$2$3>')
-    .replace(/&lt;\/(title|subtitle|heading|subheading|header)\s*&gt;/giu, '</$1>');
-  const titles = /^(?:title|subtitle|heading|subheading|header)$/iu;
-  const wrappers = /^(?:formula|equation|math|mathml|math-block|box|text|stack|row|column|card|callout|rich-text|divider|spacer|div|section|article|form|fieldset|legend|label|badge|icon|list|list-item|radio-group|radio|button|option|Image|AsyncImage|Entity|Link|Cite|Map|Chart)$/iu;
-  let text = '', cursor = 0;
-  for (const match of source.matchAll(/<\/?([A-Za-z][\w.-]*)(?=[\s/>]|$)/gu)) {
-    const start = match.index, name = match[1];
-    const declarativeComponent = /^[A-Z][A-Za-z0-9_.-]*$/u.test(name);
-    if (start < cursor || (!titles.test(name) && !wrappers.test(name) && !RICH_GRID_TAG.test(name) && !declarativeComponent)) continue;
+  const source = stripPrivateRichReferences(String(value || ''));
+  let text = '', cursor = 0, badgeStart = -1;
+  for (const match of source.matchAll(/(?<!\\)<\/?([A-Za-z][\w.-]*)(?=[\s/>]|$)/gu)) {
+    const start = match.index, name = match[1].toLowerCase(), kind = tags.get(name);
+    const declarativeComponent = /^[A-Z][A-Za-z0-9_.-]*$/u.test(match[1]);
+    if (start < cursor || (!kind && !contextualWrapper.test(name) && !declarativeComponent)) continue;
     text += source.slice(cursor, start);
     const end = tagEnd(source, start);
     cursor = end;
     if (source[end - 1] !== '>') break;
-    if (titles.test(name)) text += source[start + 1] === '/' ? '\n\n' : '\n\n### ';
-    else if (RICH_GRID_TAG.test(name)) text += '\n\n';
-    else if (name.toLowerCase() === 'entity' && source[start + 1] !== '/') {
+    const closing = source[start + 1] === '/';
+    if (kind === 'heading') text += closing ? '\n\n' : '\n\n### ';
+    else if (kind === 'grid') text += '\n\n';
+    else if (kind === 'math') text += '\n';
+    else if (kind === 'badge') {
+      if (closing && badgeStart >= 0) {
+        const label = text.slice(badgeStart);
+        if (label && label === label.trim() && !/[\r\n*]/u.test(label)) {
+          const prefix = text.slice(0, badgeStart);
+          text = prefix + (prefix.endsWith('**') ? ' ' : '') + '**' + label + '**';
+        }
+        badgeStart = -1;
+      } else if (!closing && !/\/\s*>$/u.test(source.slice(start, end))) badgeStart = text.length;
+    } else if (name === 'entity' && !closing) {
       const label = attribute(source.slice(start, end), 'value');
       if (label) text += String(literal(label) ?? label);
     }
-    else if (/^(?:formula|equation|math|mathml|math-block)$/iu.test(name)) text += '\n';
   }
-  text += source.slice(cursor);
-  // Retain '< b' inequalities, but withhold a genuine partial component name.
-  text = text.replace(/<\/?([A-Za-z][\w.-]*)?$/u, (fragment, name = '') =>
-    ['title', 'subtitle', 'heading', 'subheading', 'header', 'formula', 'equation', 'math', 'box', 'grid', 'grid-item', 'text', 'Cite', 'Image', 'Map', 'Chart', 'button', 'select', 'input', 'textarea', 'option']
-      .some(tag => tag.toLowerCase().startsWith(name.toLowerCase())) ? '' : fragment);
-  return text;
+  return text + source.slice(cursor);
 }
 
 function referencedStates(expression, states) {
@@ -564,7 +619,8 @@ function interactionContexts(input, controls, restore) {
 function compile(value) {
   const source = String(value || '');
   if (cache.has(source)) return cache.get(source);
-  const maskedResult = maskCode(source), input = expandDeclarativeForms(maskedResult.masked, { balanced, tagEnd });
+  const maskedResult = maskCode(source);
+  const input = expandDeclarativeForms(decodeEscapedTags(maskedResult.masked, false), { balanced, tagEnd });
   const states = new Map(), setters = new Map(), bindings = new Map(), fields = [], buttons = [], spans = [], declarations = [];
   for (const match of input.matchAll(/\{@body\b/giu)) {
     const start = match.index, end = balanced(input, start);
@@ -582,7 +638,7 @@ function compile(value) {
   const partialBody = /\{@(?:b(?:o(?:d(?:y)?)?)?)?$/iu.exec(input);
   if (partialBody) spans.push([partialBody.index, input.length]);
   const scopeAt = start => declarations.findLast(scope => scope.start < start) || { states: new Map(), setters: new Map(), bindings: new Map() };
-  for (const match of input.matchAll(/<(button|select|input|textarea|radio-group)\b/giu)) {
+  for (const match of input.matchAll(/(?<!\\)<(button|select|input|textarea|radio-group)(?=[\s/>]|$)/giu)) {
     const start = match.index, type = match[1].toLowerCase(), openingEnd = tagEnd(input, start);
     if (spans.some(([from, to]) => start >= from && start < to)) continue;
     if (input[openingEnd - 1] !== '>') { spans.push([start, input.length]); continue; }
@@ -633,8 +689,9 @@ function compile(value) {
     if (previous && span[0] <= previous[1]) previous[1] = Math.max(previous[1], span[1]);
     else merged.push([...span]);
   }
-  const rich = spans.length > 0 || /(?:<|&lt;)\/?grid(?:-item)?(?=[\s/>&]|$)/iu.test(input) || new RegExp(`<(?:(?:Image|Cite|Map|Chart|${RICH_TITLE_TAG}|${RICH_MATH_TAG})|box|text|stack|row|column|divider|spacer)\\b|[\\uE200-\\uE20F]|\\\\uE2[0-9a-f]{2}|&lt;\\/?(?:${RICH_TITLE_TAG})\\b|turn\\d+(?:search|news|open|find|image)\\d+|<\\/?[A-Za-z]*$`, 'iu').test(input);
-  const contexts = interactionContexts(input, fields.concat(buttons), maskedResult.restore);
+  const rich = spans.length > 0 || tagMarker.test(input) || controlMarker.test(input) || /turn\d+(?:search|news|open|find|image)\d+/iu.test(input);
+  const controls = fields.concat(buttons);
+  const contexts = controls.length ? interactionContexts(input, controls, maskedResult.restore) : new Map();
   for (const field of fields) field.key = JSON.stringify([contexts.get(field.start).key, field.name]);
   const result = { states, fields, buttons, contexts };
   const projectText = (ranges, preserveLayout = false) => {
@@ -646,6 +703,7 @@ function compile(value) {
     }
     let text = input;
     for (let index = union.length - 1; index >= 0; index--) text = text.slice(0, union[index][0]) + text.slice(union[index][1]);
+    if (!rich && !preserveLayout) return maskedResult.restore(text);
     if (rich && !preserveLayout) text = richMarkupText(text).replace(/^[ \t]{2,}(?=\S)/gmu, '');
     return maskedResult.restore(text.replace(/\n{3,}/gu, '\n\n').trim());
   };

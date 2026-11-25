@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild entry.mjs --bundle --format=iife --global-name=KuanPresentation --target=es2023 --platform=neutral --main-fields=module,main --minify --legal-comments=inline --outfile=../../app/src/main/assets/kuan-presentation.js",
+    "build": "node build.mjs",
     "test": "node --test presentation.test.mjs"
   },
   "dependencies": {

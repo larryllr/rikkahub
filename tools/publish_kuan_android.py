@@ -9,12 +9,12 @@ import shutil
 import tempfile
 
 
-VERSION = '2.0.5'
-VERSION_CODE = 8
-PREVIOUS_VERSION = '2.0.4'
-PREVIOUS_CODE = 7
-PREVIOUS_MANIFEST_SHA = '72a9885ccc8c723c7573f3a572e5a756dfc2388a7a36a36977d338a6a3e453b1'
-PREVIOUS_PAGE_SHA = '6ee568292c04f79e3da68142b72991c78002a8a97cd5d0612347a9e8e472d5d8'
+VERSION = '2.0.6'
+VERSION_CODE = 9
+PREVIOUS_VERSION = '2.0.5'
+PREVIOUS_CODE = 8
+PREVIOUS_MANIFEST_SHA = 'ccbcdcc8ee5dddb8762b660efe4d0af4f29b33389c911ee2a84f2adb0be31951'
+PREVIOUS_PAGE_SHA = '244c112c867a72c028f8a05175c9661aa04ed95fb89e27f82176a3d21d6fee0a'
 PACKAGE = 'com.kuanapi.app.nativepreview'
 ORIGIN = 'https://kuanapi.kuankuan.de5.net'
 PUBLIC = Path('/opt/kuanapi-ha/sub2api/data/public/downloads')

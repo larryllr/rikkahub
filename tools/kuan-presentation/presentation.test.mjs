@@ -132,3 +132,38 @@ test('grid and grid-item lay out both pieces of prose without touching real code
     assert.equal(project(grid, {}, true).text, result.text.split(code)[0].replace('Comparison\n\n', '').trimEnd());
   }
 });
+
+test('standalone badges project from raw and bridged tags without changing the formula', () => {
+  const before = '\u6240\u4ee5\uff1a';
+  const answer = '\u7b54\u6848';
+  const after = '$$\n\\boxed{\\frac{\\Delta U}{\\Delta I}=-r}\n$$\n\nIf $a < r$, keep the inequality.';
+  for (const badge of [
+    `<badge color="success" size="lg">${answer}</badge>`,
+    `&lt;badge color=&quot;success&quot; size=&quot;lg&quot;&gt;${answer}&lt;/badge&gt;`,
+  ]) {
+    const body = `${before}\n\n${badge}\n\n${after}`;
+    const expected = `${before}\n\n**${answer}**\n\n${after}`;
+    const final = project(body);
+    assert.equal(final.text, expected);
+    assert.equal(final.history, expected);
+    assert.deepEqual(final.groups, []);
+    assert.equal(project(body, {}, true).text, expected);
+  }
+});
+
+test('native tag detection uses complete names and holds partial tags only while streaming', () => {
+  for (const tag of ['<ba', '<badge color="succ', '&l', '&lt;ba', '&lt;badge color=&quot;succ', '</bad']) {
+    assert.equal(project(`Start.\n\n${tag}`, {}, true).text, 'Start.');
+  }
+  for (const source of ['Compare a<r', 'Literal <badge-demo> suffix', 'Literal \\<badge>']) {
+    assert.equal(project(source).text, source);
+  }
+  const code = [
+    '`<badge>demo</badge>`',
+    'Show ``<badge label="`">Quoted</badge>``.',
+    '```html\n<badge>Example</badge>\n````',
+    '~~~html\n<badge>Tilde example</badge>\n~~~~',
+  ].join('\n\n');
+  assert.equal(project(`${code}\n\n<badge>Real</badge><badge>Next</badge>`).text, `${code}\n\n**Real** **Next**`);
+  assert.equal(project('Read.\n\n<card><list><list-item>One</list-item></list></card>').text, 'Read.\n\nOne');
+});

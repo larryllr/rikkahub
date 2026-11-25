@@ -6,8 +6,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $stageRoot = [IO.Path]::GetFullPath($Stage)
-$version = '2.0.5'
-$code = 8
+$version = '2.0.6'
+$code = 9
 $package = 'com.kuanapi.app.nativepreview'
 $origin = 'https://kuanapi.kuankuan.de5.net/downloads/mobile-native'
 $certificate = '184f05de36ac9a6e5807f26bef7f848f1b65f849058d461b234da42c4e7ecf59'
@@ -84,7 +84,7 @@ $hashes | Set-Content -Encoding ascii -LiteralPath (Join-Path $release 'SHA256SU
     version = $version
     versionCode = $code
     publishedAt = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
-    changelog = 'Show web illustrations at their positions in the answer, open reply activity from one compact icon row, and render grid content without exposing layout markup.'
+    changelog = 'Render answer labels and other rich layout tags in live and saved replies while preserving equations, code examples, and inline images.'
     downloads = @($downloads)
 } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM -LiteralPath (Join-Path $channel 'latest.json')
 $hashes

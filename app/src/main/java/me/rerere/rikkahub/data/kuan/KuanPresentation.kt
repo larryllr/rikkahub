@@ -23,15 +23,10 @@ private const val SOURCE = "kuan:form_source"
 private const val GROUPS = "kuan:form_groups"
 private const val HISTORY = "kuan:form_history"
 private const val PROJECTED = "kuan:presentation_v2"
-private const val GRID_PROJECTED = "kuan:layout_v1"
+private const val LAYOUT_PROJECTED = "kuan:layout_v2"
 private const val INLINE_IMAGES = "kuan:inline_images"
 internal const val KUAN_NATIVE_MARKDOWN = "kuan:native_markdown"
 internal const val MAX_PRESENTATION = 256 * 1024
-private val controlMarker = Regex(
-    """\{@body\b|GenUI\s*\.\s*issueNewTurn|__dil\.jsx[s]?\s*\(|(?:<|&lt;)/?(?:box|title|heading|radio-group|select|textarea|input|checkbox|button|AsyncImageGroup|AsyncImage|cite|formula|callout)\b|[\uE200-\uE20F]|\\u(?:\{e20[0-9a-f]\}|e20[0-9a-f])""",
-    RegexOption.IGNORE_CASE,
-)
-private val layoutMarker = Regex("""(?:<|&lt;)/?grid(?:-item)?(?=[\s/>&]|$)""", RegexOption.IGNORE_CASE)
 private val imageMarker = Regex("""<AsyncImage(?:Group)?(?=[\s/>]|$)|(?:\uE200|\\u(?:\{e200\}|e200))image_group""")
 private val sourceHeading = Regex(
     """^[ \t]{0,3}(?:#{1,6}[ \t]+)?(?:\*\*|__)?(?:\u6765\u6e90|\u53c2\u8003\u6765\u6e90|\u53c2\u8003\u8d44\u6599|\u5f15\u7528\u6765\u6e90|sources?|references?|citations?)(?=[:\uff1a*_\s]|$)""",
@@ -48,7 +43,7 @@ internal class KuanPresentationPreview(private val context: Context) {
     suspend fun render(message: UIMessage): UIMessage {
         if (message.role != MessageRole.ASSISTANT) return message
         return message.copy(parts = message.parts.joinSplitKuanPresentation(withImages = false).mapIndexed { index, part ->
-            if (part !is UIMessagePart.Text || !part.hasKuanMarkup()) return@mapIndexed part
+            if (part !is UIMessagePart.Text || !part.text.hasKuanMarkup(streaming = true)) return@mapIndexed part
             val now = SystemClock.elapsedRealtime()
             val previous = projections[index]?.takeIf { part.text.startsWith(it.source) }
             val visible = when {
@@ -66,20 +61,34 @@ internal class KuanPresentationPreview(private val context: Context) {
     }
 }
 
-private fun String.hasKuanMarkup() =
-    length <= MAX_PRESENTATION && (controlMarker.containsMatchIn(this) || layoutMarker.containsMatchIn(this))
+private fun String.hasKuanMarkup(streaming: Boolean = false) =
+    length <= MAX_PRESENTATION && (kuanPresentationTag.containsMatchIn(this) ||
+        kuanPresentationControl.containsMatchIn(this) || streaming && kuanPresentationPartialTag.containsMatchIn(this))
 
-private fun UIMessagePart.Text.hasKuanMarkup() = text.hasKuanMarkup()
+private fun String.hasVisibleKuanTag(): Boolean {
+    if (length > MAX_PRESENTATION) return false
+    var tag = kuanPresentationTag.find(this) ?: return false
+    for (code in kuanPresentationCode.findAll(this)) {
+        if (tag.range.first < code.range.first) return true
+        if (tag.range.first <= code.range.last) tag = kuanPresentationTag.find(this, code.range.last + 1) ?: return false
+    }
+    return true
+}
 
-private fun UIMessagePart.Text.needsProjection() =
-    (metadata?.flag(PROJECTED) != true || metadata?.flag(GRID_PROJECTED) != true &&
-        text.length <= MAX_PRESENTATION && layoutMarker.containsMatchIn(text)) && (
-        kuanFormSource() != null || nativeMarkdown() != null ||
-            text.hasKuanMarkup() || text.length <= MAX_PRESENTATION && sourceHeading.containsMatchIn(text)
-        )
+private fun UIMessagePart.Text.needsProjection(): Boolean {
+    val meta = metadata
+    if (meta?.flag(PROJECTED) == true) {
+        return meta.flag(LAYOUT_PROJECTED) != true && text.hasVisibleKuanTag()
+    }
+    return kuanFormSource() != null || nativeMarkdown() != null || text.hasKuanMarkup() ||
+        text.length <= MAX_PRESENTATION && sourceHeading.containsMatchIn(text)
+}
 
 internal fun UIMessage.needsKuanPresentation() =
-    role == MessageRole.ASSISTANT && parts.any { it is UIMessagePart.Text && it.needsProjection() }
+    role == MessageRole.ASSISTANT && (
+        parts.any { it is UIMessagePart.Text && it.needsProjection() } ||
+            parts.joinSplitKuanPresentation(withImages = false) !== parts
+        )
 
 internal suspend fun finishKuanPresentation(context: Context, message: UIMessage): UIMessage {
     if (!message.needsKuanPresentation()) return message
@@ -107,7 +116,9 @@ internal suspend fun finishKuanPresentation(context: Context, message: UIMessage
             return@mapIndexedNotNull part
         }
         if (index == snapshotIndex && index != target && part.text.isEmpty()) return@mapIndexedNotNull null
-        val raw = part.kuanFormSource() ?: part.text
+        // Reproject stored display text without rebuilding existing interactions or image anchors.
+        val previouslyProjected = part.metadata?.flag(PROJECTED) == true
+        val raw = if (previouslyProjected) part.text else part.kuanFormSource() ?: part.text
         val native = snapshot.takeIf { index == target }
         var source = if (native != null && raw.length <= MAX_PRESENTATION && !raw.hasKuanMarkup() &&
             !(native.length < raw.length && raw.startsWith(native))) native else raw
@@ -132,13 +143,17 @@ internal suspend fun finishKuanPresentation(context: Context, message: UIMessage
         }
         val metadata = part.metadata.orEmpty().toMutableMap()
         metadata.remove(KUAN_NATIVE_MARKDOWN)
-        metadata.remove(SOURCE)
-        metadata.remove(GROUPS)
         metadata.remove(HISTORY)
         metadata[PROJECTED] = JsonPrimitive(true)
-        metadata[GRID_PROJECTED] = JsonPrimitive(true)
-        display?.array("inlineImages")?.takeIf { it.isNotEmpty() }?.let { metadata[INLINE_IMAGES] = it }
-        if (groups.isNotEmpty()) {
+        metadata[LAYOUT_PROJECTED] = JsonPrimitive(true)
+        display?.array("inlineImages")?.takeIf { it.isNotEmpty() }?.let { inserted ->
+            metadata[INLINE_IMAGES] = JsonArray((part.metadata?.array(INLINE_IMAGES).orEmpty() + inserted).distinct().take(16))
+        }
+        if (!previouslyProjected) {
+            metadata.remove(SOURCE)
+            metadata.remove(GROUPS)
+        }
+        if (groups.isNotEmpty() && metadata[SOURCE] == null) {
             metadata[SOURCE] = JsonPrimitive(source)
             metadata[GROUPS] = requireNotNull(display?.get("groups"))
         }
@@ -164,7 +179,7 @@ private fun List<UIMessagePart>.joinSplitKuanPresentation(withImages: Boolean): 
     val hasImageAnchor = imageMarker.containsMatchIn(joined) || withImages && any {
         it is UIMessagePart.Text && it.nativeMarkdown()?.let(imageMarker::containsMatchIn) == true
     }
-    if (!hasImageAnchor && !layoutMarker.containsMatchIn(joined)) return this
+    if (!hasImageAnchor && !joined.hasVisibleKuanTag()) return this
     var replaced = false
     return mapNotNull { part ->
         if (part !is UIMessagePart.Text || part.text.isEmpty()) part
