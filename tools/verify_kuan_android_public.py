@@ -15,6 +15,7 @@ def audit(origin, relative, local):
         file = Path(folder) / 'response'
         result = subprocess.run(
             ['curl', '--silent', '--show-error', '--fail', '--max-time', '90', '--proto', '=https',
+             '--user-agent', 'KuanAPI-Release-Verification/1.0',
              '--header', 'Cache-Control: no-cache', '--output', str(file),
              '--write-out', '%{http_code} %{url_effective}', url],
             capture_output=True, text=True, check=True)

@@ -278,7 +278,7 @@ class KuanNativeContractTest {
                         action.context(listOf(earlier, follow, request)),
                         TextGenerationParams(model = model),
                     ).collect { replyFrames += it }
-                    assertEquals("eA==", replyFrames.filterIsInstance<StreamChunk.ImageSnapshot>().single().data)
+                    assertEquals(KUAN_TEST_IMAGE_PNG, replyFrames.filterIsInstance<StreamChunk.ImageSnapshot>().single().data)
                     assertEquals(1, replyFrames.count { it is StreamChunk.Finish })
                     val (path, body) = fixture.imageRequests.last()
                     assertEquals(if (group == 1L) "/v1/chat/completions" else "/v1/responses", path)
@@ -483,7 +483,7 @@ class KuanNativeContractTest {
                     imageRequests += path to read(req)
                     val frames = listOf(
                         """{"type":"response.image_generation_call.in_progress","stage":"generating"}""",
-                        """{"type":"image_generation.completed","url":"data:image/png;base64,eA=="}""",
+                        """{"type":"image_generation.completed","url":"data:image/png;base64,$KUAN_TEST_IMAGE_PNG"}""",
                     ) + if (work) {
                         listOf("""{"type":"response.completed","response":{"id":"completed","status":"completed","output":[]}}""")
                     } else {

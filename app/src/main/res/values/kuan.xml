@@ -99,4 +99,17 @@
   <string name="kuan_price_all_efforts">All reasoning levels</string>
   <string name="kuan_price_multiplier">Price multiplier</string>
   <string name="kuan_price_minimum">Minimum charge (USD)</string>
+  <string name="kuan_rich_content">Rich reply</string>
+  <string name="kuan_rich_image">Image</string>
+  <string name="kuan_rich_chart">Chart</string>
+  <string name="kuan_rich_table">Table</string>
+  <string name="kuan_rich_map">Map</string>
+  <string name="kuan_rich_products">Products</string>
+  <string name="kuan_rich_links">Sources</string>
+  <string name="kuan_rich_media">Media</string>
+  <string name="kuan_rich_questions">Follow-up question</string>
+  <string name="kuan_rich_pending">%1$s is loading…</string>
+  <string name="kuan_rich_unsupported">%1$s interaction is not available in this app</string>
+  <string name="kuan_rich_unavailable">%1$s data was not received</string>
+  <string name="kuan_rich_completed">%1$s completed</string>
 </resources>

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.kuan.kuanRichBlocks
 import me.rerere.rikkahub.utils.JsonInstant
 
 internal const val CHART_DISPLAY_TOOL_NAME = "chart_display"
@@ -82,7 +83,7 @@ fun List<UIMessagePart>.groupMessageParts(): List<MessagePartBlock> {
             }
 
             // 只承载 thoughtSignature 等元数据的空文本不显示，也不打断思考块
-            is UIMessagePart.Text if part.text.isEmpty() -> Unit
+            is UIMessagePart.Text if part.text.isEmpty() && part.kuanRichBlocks().isEmpty() -> Unit
 
             else -> {
                 flushThinkingSteps()

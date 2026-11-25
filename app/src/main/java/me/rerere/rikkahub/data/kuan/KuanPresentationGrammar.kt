@@ -2,12 +2,12 @@
 package me.rerere.rikkahub.data.kuan
 
 internal val kuanPresentationTag = Regex(
-    """(?<!\\)(?:<|&lt;)/?(?:title|subtitle|heading|subheading|header|formula|equation|math|mathml|math-block|grid|grid-item|badge|box|text|stack|row|column|card|callout|rich-text|divider|spacer|icon|list|list-item|radio-group|radio|select|textarea|input|checkbox|button|option|asyncimagegroup|asyncimage|image|entity|link|cite|map|chart)(?=[\s/>&]|$)""",
+    """(?<!\\)(?:<|&lt;)/?(?:title|subtitle|heading|subheading|header|formula|equation|math|mathml|math-block|grid|grid-item|badge|box|text|stack|row|column|card|callout|rich-text|divider|spacer|icon|list|list-item|radio-group|radio|select|textarea|input|checkbox|button|option|asyncimagegroup|asyncimage|image|entity|link|cite|map|chart|table-row|table-cell|table-section|stack-item|carousel-item|segmented-control|popover-trigger|popover-content|text-only-markdown|pulse-indicator|loading-indicator|loading-block|animate-item|animate-group|citation-pill|shimmer-text|native-menu|completion-section|identity-verification|date-picker|flashcard-flip|pie-chart|flight-search-submit|legacy-map-thumbnail|recording-waveform|diffs-container|page-editable-image|automation-goal-card|plot-surface|plot-overlay|flight-results-scroll|flight-native-date-label|flight-native-airport-picker|flight-airport-picker|full-height-popover|flight-calendar-modal|host-modal|flight-search-preference|flight-search-controls|flight-passenger-popover|flight-airport-autocomplete|read-only-html-view|learning-course-icon|page-snapshot-prose|segmented-bar-chart|plot-tooltip|search-image)(?=[\s/>&]|$)""",
     RegexOption.IGNORE_CASE,
 )
 
 internal val kuanPresentationControl = Regex(
-    """\{@body\b|GenUI\s*\.\s*issueNewTurn|__dil\.jsx[s]?\s*\(|[\uE200-\uE20F]|\\u(?:\{e20[0-9a-f]\}|e20[0-9a-f])""",
+    """\{@body\b|GenUI\s*\.\s*issueNewTurn|__dil\.jsx[s]?\s*\(|[\uE000-\uE0FF\uE102-\uF8FF]|\\u(?:\{0{0,2}e(?:00[01]|20[0-9a-f])\}|e(?:00[01]|20[0-9a-f]))|\[citefilecite\b""",
     RegexOption.IGNORE_CASE,
 )
 

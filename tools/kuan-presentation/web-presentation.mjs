@@ -2,6 +2,7 @@
 // Safe, declarative compatibility layer for leaked webpage rich content.
 // It intentionally does not execute model-provided JavaScript.
 import { declarativeValue, expandDeclarativeForms } from './declarative-forms.mjs';
+import { protocolControl, rewriteWebInline } from './inline-protocol.mjs';
 const cache = new Map();
 let cacheCharacters = 0;
 const OPEN = { '(': ')', '[': ']', '{': '}' };
@@ -16,12 +17,22 @@ const tags = new Map(Object.entries({
     'box', 'text', 'stack', 'row', 'column', 'card', 'callout', 'rich-text', 'divider', 'spacer',
     'icon', 'list', 'list-item', 'radio-group', 'radio', 'select', 'textarea', 'input',
     'checkbox', 'button', 'option', 'asyncimagegroup', 'asyncimage', 'image', 'entity', 'link', 'cite', 'map', 'chart',
+    'table-row', 'table-cell', 'table-section', 'stack-item', 'carousel-item', 'segmented-control',
+    'popover-trigger', 'popover-content', 'text-only-markdown', 'pulse-indicator', 'loading-indicator',
+    'loading-block', 'animate-item', 'animate-group', 'citation-pill', 'shimmer-text', 'native-menu',
+    'completion-section', 'identity-verification', 'date-picker', 'flashcard-flip', 'pie-chart',
+    'flight-search-submit', 'legacy-map-thumbnail', 'recording-waveform', 'diffs-container',
+    'page-editable-image', 'automation-goal-card', 'plot-surface', 'plot-overlay', 'flight-results-scroll',
+    'flight-native-date-label', 'flight-native-airport-picker', 'flight-airport-picker', 'full-height-popover', 'flight-calendar-modal',
+    'host-modal', 'flight-search-preference', 'flight-search-controls', 'flight-passenger-popover',
+    'flight-airport-autocomplete', 'read-only-html-view', 'learning-course-icon', 'page-snapshot-prose',
+    'segmented-bar-chart', 'plot-tooltip', 'search-image',
   ],
 }).flatMap(([kind, names]) => names.map(name => [name, kind])));
 const tagNames = [...tags.keys()].join('|');
 export const presentationGrammar = {
   tag: String.raw`(?<!\\)(?:<|&lt;)/?(?:${tagNames})(?=[\s/>&]|$)`,
-  control: /\{@body\b|GenUI\s*\.\s*issueNewTurn|__dil\.jsx[s]?\s*\(|[\uE200-\uE20F]|\\u(?:\{e20[0-9a-f]\}|e20[0-9a-f])/iu.source,
+  control: /\{@body\b|GenUI\s*\.\s*issueNewTurn|__dil\.jsx[s]?\s*\(/iu.source + '|' + protocolControl,
   partialTag: /(?<!\\)(?:(?:<|&lt;)\/?([a-z][\w.-]*)?|&lt?)$/iu.source,
   // A closing fence may be longer than its opener; inline spans use equal runs.
   code: /^[ \t]{0,3}(`{3,})(?!`)[^\r\n]*(?:\r?\n|$)[\s\S]*?(?:^[ \t]{0,3}\1`*[ \t]*(?=\r?$)|(?![\s\S]))|^[ \t]{0,3}(~{3,})(?!~)[^\r\n]*(?:\r?\n|$)[\s\S]*?(?:^[ \t]{0,3}\2~*[ \t]*(?=\r?$)|(?![\s\S]))|(?<!`)(`+)(?!`)[^\r\n]*?(?:(?<!`)\3(?!`)|(?=\r?$))/gmu.source,
@@ -130,7 +141,6 @@ function resolveRichPresentation(value, presentation, streaming, history = false
     if (fragment && (!fragment[1] || [...tags.keys()].some(name => name.startsWith(fragment[1].toLowerCase()))))
       input = input.slice(0, fragment.index).trimEnd();
   }
-  if (nativeImage) input = decodeLiteralUnicodeEscapes(input);
   let output = '', cursor = 0;
   for (const match of input.matchAll(/(?<!\\)<(AsyncImageGroup|AsyncImage|Image|Cite|Entity|Link|Map|Chart)(?=[\s/>]|$)/gu)) {
     const start = match.index;
@@ -173,17 +183,6 @@ function resolveRichPresentation(value, presentation, streaming, history = false
     cursor = end;
   }
   output += input.slice(cursor);
-  output = output.replace(/\uE200image_group\uE202([\s\S]*?)\uE201/gu, (_, raw) => {
-    try { const data = JSON.parse(raw); return (Array.isArray(data.query) ? data.query : []).map(imageMarkup).join(''); }
-    catch { return ''; }
-  });
-  output = output.replace(/\uE200cite\uE202([^\uE201]*)\uE201/gu, (_, raw) => {
-    const sources = components.filter(item => item.kind === 'Cite').flatMap(item => item.sources);
-    return (raw.match(/turn\d+(?:search|news|open|find|image)\d+/gu) || []).flatMap(ref => {
-      const source = sources.find(item => item.ref_id === ref);
-      return source ? '<a class="kuan-native-citation" href="' + escapePresentationHTML(source.url) + '" target="_blank" rel="noopener noreferrer">' + escapePresentationHTML(source.title || new URL(source.url).hostname) + '</a>' : [];
-    }).join(' · ');
-  });
   return code.restore(output === input ? output : output.replace(/\n{3,}/gu, '\n\n').trim());
 }
 
@@ -281,58 +280,6 @@ function evaluate(source, states) {
     return invalid ? null : text.replace(/\\([\\`nrt])/gu, (_, char) => ({ n: '\n', r: '\r', t: '\t' }[char] || char));
   }
   return null;
-}
-
-function decodeLiteralUnicodeEscapes(value) {
-  return String(value || '').replace(/\\u(?:\{([0-9a-f]{1,6})\}|([0-9a-f]{4}))/giu, (match, braced, fixed) => {
-    const codePoint = Number.parseInt(String(braced || fixed), 16);
-    if (codePoint < 0xe200 || codePoint > 0xe20f) return match;
-    return String.fromCodePoint(codePoint);
-  });
-}
-
-// Native webpage Markdown uses private-use tokens for links, entities,
-// citations and image groups. They are transport markers, not visible text.
-// Convert only the declarative forms we understand and drop unknown markers.
-function normalizeNativePresentationTokens(value) {
-  return String(value || '')
-    .replace(/\uE200([a-z_][\w-]*)\uE202([\s\S]*?)\uE201/gu, (whole, kind, body) => {
-      const parts = body.split('\uE202');
-      if (kind.toLowerCase() === 'url' && parts.length >= 2) {
-        const label = parts[0].trim();
-        const url = parts.slice(1).join('\uE202').trim().replace(/[)\s]/gu, '');
-        if (label && /^https?:\/\//iu.test(url)) return `[${label.replace(/[\[\]]/gu, '')}](${url})`;
-      }
-      if (kind.toLowerCase() === 'entity') {
-        try {
-          const data = JSON.parse(parts.join('\uE202'));
-          if (Array.isArray(data)) return String(data[1] || data[0] || '').trim();
-        } catch { /* safe plain-label fallback below */ }
-        return parts.join(' ').replace(/[\[\]"']/gu, ' ').replace(/\s+/gu, ' ').trim();
-      }
-      return '';
-    })
-    .replace(/\uE200(?:cite|image_group|ref|product|weather|finance|sports|calculator)\uE202[\s\S]*?\uE201/giu, '')
-    .replace(/\uE200[a-z_][\w-]*\uE202[\s\S]*$/giu, '')
-    .replace(/[\uE200-\uE20F]/gu, '');
-}
-
-// These markers are emitted by the web renderer, not by the user's answer.
-// Keep the cleanup generic enough for new citation/image component names while
-// leaving ordinary prose and real source code untouched.
-const COMPLETE_PRIVATE_RICH_REFERENCE = /\uE200[\s\S]*?\uE201/gu;
-const PARTIAL_PRIVATE_RICH_REFERENCE = /\uE200[\s\S]*$/u;
-const ORPHAN_PRIVATE_RICH_CONTROL = /[\uE201-\uE20F]/gu;
-const INTERNAL_CITATION = /[ \t]*(?:[\uE000-\uF8FF]*cite[\uE000-\uF8FF\s]*)?(?:turn\d+(?:search|news|open|find|image)\d+(?:[\uE000-\uF8FF\s,;]*)?)+[\uE000-\uF8FF]*/giu;
-const PARTIAL_INTERNAL_CITATION = /(?:^|[\s\uE000-\uF8FF])(?:cite(?:[\s\uE000-\uF8FF]+turn\d+[a-z]*(?:\d*)?)?|turn\d+[a-z]*(?:\d*)?)[\uE000-\uF8FF\s,;]*$/iu;
-
-function stripPrivateRichReferences(value) {
-  return normalizeNativePresentationTokens(decodeLiteralUnicodeEscapes(value))
-    .replace(COMPLETE_PRIVATE_RICH_REFERENCE, '')
-    .replace(PARTIAL_PRIVATE_RICH_REFERENCE, '')
-    .replace(ORPHAN_PRIVATE_RICH_CONTROL, '')
-    .replace(INTERNAL_CITATION, '')
-    .replace(PARTIAL_INTERNAL_CITATION, '');
 }
 
 function stripBodyDeclarations(value) {
@@ -515,8 +462,44 @@ function turnExpression(handler) {
   return handler.slice(open + 1, end - 1);
 }
 
+function projectPrimitiveTables(source) {
+  if (!/<table-row(?=[\s>])/iu.test(source)) return source;
+  const row = /<table-row\b([^<>]*)>((?:(?!<table-row\b)[\s\S])*?)<\/table-row\s*>/giu;
+  const rows = [];
+  let output = '', cursor = 0, end = 0;
+  function emit() {
+    if (!rows.length) return;
+    const width = Math.max(...rows.map(item => item.cells.length));
+    const line = cells => '| ' + Array.from({ length: width }, (_, i) => cells[i] || '').join(' | ') + ' |';
+    const header = rows[0].header ? rows.shift().cells : [];
+    output += '\n\n' + [line(header), line(Array(width).fill('---')), ...rows.map(item => line(item.cells))].join('\n') + '\n\n';
+    rows.length = 0;
+  }
+  for (const hit of source.matchAll(row)) {
+    const cells = [];
+    const body = hit[2];
+    const cell = /<table-cell\b([^<>]*)>((?:(?!<table-cell\b)[\s\S])*?)<\/table-cell\s*>/giu;
+    let after = 0, header = true, valid = true;
+    for (const item of body.matchAll(cell)) {
+      if (body.slice(after, item.index).trim() || cells.length >= 16) { valid = false; break; }
+      header &&= /\s(?:header|role\s*=\s*["']columnheader["'])(?:\s|=|$)/iu.test(item[1]);
+      cells.push(item[2].trim().replace(/\r?\n/gu, ' ').replace(/(?<!\\)\|/gu, '\\|'));
+      after = item.index + item[0].length;
+    }
+    if (!valid || !cells.length || body.slice(after).trim()) continue;
+    if (!rows.length || source.slice(end, hit.index).trim() || rows.length >= 128) {
+      emit();
+      output += source.slice(cursor, hit.index);
+    }
+    rows.push({ cells, header });
+    end = cursor = hit.index + hit[0].length;
+  }
+  emit();
+  return output + source.slice(cursor);
+}
+
 function richMarkupText(value) {
-  const source = stripPrivateRichReferences(String(value || ''));
+  const source = projectPrimitiveTables(rewriteWebInline(String(value || '')));
   let text = '', cursor = 0, badgeStart = -1;
   for (const match of source.matchAll(/(?<!\\)<\/?([A-Za-z][\w.-]*)(?=[\s/>]|$)/gu)) {
     const start = match.index, name = match[1].toLowerCase(), kind = tags.get(name);
@@ -689,7 +672,7 @@ function compile(value) {
     if (previous && span[0] <= previous[1]) previous[1] = Math.max(previous[1], span[1]);
     else merged.push([...span]);
   }
-  const rich = spans.length > 0 || tagMarker.test(input) || controlMarker.test(input) || /turn\d+(?:search|news|open|find|image)\d+/iu.test(input);
+  const rich = spans.length > 0 || tagMarker.test(input) || controlMarker.test(input);
   const controls = fields.concat(buttons);
   const contexts = controls.length ? interactionContexts(input, controls, maskedResult.restore) : new Map();
   for (const field of fields) field.key = JSON.stringify([contexts.get(field.start).key, field.name]);
@@ -704,7 +687,7 @@ function compile(value) {
     let text = input;
     for (let index = union.length - 1; index >= 0; index--) text = text.slice(0, union[index][0]) + text.slice(union[index][1]);
     if (!rich && !preserveLayout) return maskedResult.restore(text);
-    if (rich && !preserveLayout) text = richMarkupText(text).replace(/^[ \t]{2,}(?=\S)/gmu, '');
+    if (rich && !preserveLayout) text = richMarkupText(text);
     return maskedResult.restore(text.replace(/\n{3,}/gu, '\n\n').trim());
   };
   result.text = projectText(merged);
@@ -811,8 +794,8 @@ export function projectKuanNativeImages(value, images, streaming, showForms) {
   const byQuery = new Map();
   for (const { query, url } of images.slice(0, 16)) {
     if (typeof query !== 'string' || typeof url !== 'string' ||
-        !/^https:\/\/[^\s<>\\]+$/u.test(url) || byQuery.has(query)) continue;
-    byQuery.set(query, url);
+        !/^https:\/\/[^\s<>\\]+$/u.test(url)) continue;
+    byQuery.set(query, byQuery.has(query) ? null : url);
   }
   const placed = new Map();
   const input = resolveRichPresentation(value, null, streaming, true, query => {
@@ -823,6 +806,7 @@ export function projectKuanNativeImages(value, images, streaming, showForms) {
     placed.set(url, image);
     return '\n\n' + image + '\n\n';
   });
+  if (input.length > 256 * 1024) return { text: mapKuanRichProse(input, richMarkupText), placed };
   const result = compile(input);
   return { text: !streaming && showForms ? result.displayText : result.text, placed };
 }

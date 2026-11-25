@@ -6,8 +6,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $stageRoot = [IO.Path]::GetFullPath($Stage)
-$version = '2.0.6'
-$code = 9
+$version = '2.0.7'
+$code = 10
 $package = 'com.kuanapi.app.nativepreview'
 $origin = 'https://kuanapi.kuankuan.de5.net/downloads/mobile-native'
 $certificate = '184f05de36ac9a6e5807f26bef7f848f1b65f849058d461b234da42c4e7ecf59'
@@ -15,8 +15,10 @@ $apkRoot = Join-Path $repo 'app/build/outputs/apk/github/release'
 $assets = Join-Path $repo 'app/src/main/assets/kuan-studio'
 
 if (Test-Path -LiteralPath $stageRoot) { throw 'Staging directory must be new' }
-$pending = & git -C $repo status --short --untracked-files=no
+$pending = & git -C $repo status --short --untracked-files=normal
 if ($LASTEXITCODE -ne 0 -or $pending) { throw 'The corresponding source must be committed before staging' }
+$sourceCommit = (& git -C $repo rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'Missing corresponding source commit' }
 $channel = Join-Path $stageRoot 'mobile-native'
 $release = Join-Path $channel $version
 New-Item -ItemType Directory -Path $release | Out-Null
@@ -70,9 +72,6 @@ $downloads = foreach ($abi in 'arm64-v8a','x86_64') {
     }
 }
 
-$source = Join-Path $release "kuanapi-$version-source.zip"
-& git -C $repo archive --format=zip "--prefix=kuanapi-$version/" "--output=$source" HEAD
-if ($LASTEXITCODE -ne 0) { throw 'Source export failed' }
 Copy-Item -LiteralPath (Join-Path $repo 'app/src/main/res/drawable-nodpi/kuan_logo.png') -Destination (Join-Path $release 'logo.png')
 Copy-Item -LiteralPath (Join-Path $repo 'distribution/android.html') -Destination (Join-Path $stageRoot 'android.html')
 $hashes = foreach ($file in Get-ChildItem -File -LiteralPath $release | Sort-Object -Property Name) {
@@ -84,7 +83,9 @@ $hashes | Set-Content -Encoding ascii -LiteralPath (Join-Path $release 'SHA256SU
     version = $version
     versionCode = $code
     publishedAt = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
-    changelog = 'Render answer labels and other rich layout tags in live and saved replies while preserving equations, code examples, and inline images.'
+    changelog = 'Improves rich replies, citations, charts, tables, follow-ups and image results in live replies and history.'
+    source_url = "https://github.com/larryllr/rikkahub/tree/kuanapi-v$version"
+    source_commit = $sourceCommit
     downloads = @($downloads)
 } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM -LiteralPath (Join-Path $channel 'latest.json')
 $hashes

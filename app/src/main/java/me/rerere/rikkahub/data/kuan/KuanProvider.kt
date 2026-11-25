@@ -192,8 +192,8 @@ internal class KuanStreamDecoder(wire: OpenAIWire, private val responses: Boolea
     private val parser = wire.streamDecoder(responses)
     private val nativeReply = KuanNativeReply()
     private val webStages = KuanWebToolStages()
+    private val generatedImages = KuanGeneratedImages()
     private var hasFinish = false
-    private var imageId = 0
     var terminated = false
         private set
 
@@ -209,7 +209,7 @@ internal class KuanStreamDecoder(wire: OpenAIWire, private val responses: Boolea
             if (!hasFinish) throw KuanProtocolError("The response ended without a completion reason")
             terminated = true
             val finalChunks = parser.accept(SseEvent(id = id, event = type, data = data)).chunks
-            return webStages.endUnconfirmed() + nativeReply.finish(finalChunks)
+            return generatedImages.finish() + webStages.endUnconfirmed() + nativeReply.finish(finalChunks)
         }
         val row = runCatching { KuanJson.parseToJsonElement(data) as? JsonObject }.getOrNull()
             ?: throw KuanProtocolError("Invalid event in the Kuan API stream")
@@ -219,35 +219,29 @@ internal class KuanStreamDecoder(wire: OpenAIWire, private val responses: Boolea
             throw KuanProtocolError("The provider could not complete this reply" +
                 (code?.takeIf { it.matches(Regex("[a-zA-Z0-9_.-]{1,64}")) }?.let { ": $it" } ?: ""))
         }
-        if (event == "image_generation.completed") {
-            val url = row.string("url").orEmpty()
-            val mime = url.substringBefore(";base64,").removePrefix("data:")
-            if (mime !in setOf("image/png", "image/jpeg", "image/webp") || !url.contains(";base64,")) return emptyList()
-            val image = "kuan-image-${imageId++}"
-            return listOf(
-                StreamChunk.ImageStart(image, mime), StreamChunk.ImageSnapshot(image, url.substringAfter(";base64,")),
-                StreamChunk.ImageEnd(image), StreamChunk.ServerToolEnd("kuan-image-progress", status = ServerToolStatus.COMPLETED),
-            )
-        }
         if (event == "response.image_generation_call.in_progress" && row.string("stage") != null) {
             return listOf(StreamChunk.ServerToolStart("kuan-image-progress", "image_generation", metadata = row))
         }
+        generatedImages.accept(event, row)?.let { return it }
         if (event == "kuan.web_tool.in_progress" || event == "kuan.web_tool.completed") {
             return webStages.accept(event, row)
         }
+        if (event == "kuan.web_presentation") return nativeReply.accept(row.string("message_id"), row)
         if (event?.startsWith("kuan.") == true) return emptyList()
         if (responses && event == "response.done") {
             return accept(JsonObject(row + ("type" to JsonPrimitive("response.completed"))).toString(), id, type)
         }
         val responseTerminal = responses && event in setOf("response.completed", "response.incomplete")
-        if (!responses) {
-            val choice = row.array("choices")?.firstOrNull() as? JsonObject
-            if (choice?.string("finish_reason") != null) hasFinish = true
-            choice?.obj("delta")?.let { nativeReply.accept(row.string("message_id"), it) }
-        }
-        return parser.accept(SseEvent(id = id, event = type, data = data)).chunks.also {
-            if (responseTerminal) hasFinish = true
-        }
+        val choice = if (responses) null else row.array("choices")?.firstOrNull() as? JsonObject
+        if (choice?.string("finish_reason") != null || responseTerminal) hasFinish = true
+        val messageId = row.string("message_id") ?: row.string("item_id").takeIf { responses }
+        val updates = nativeReply.accept(messageId, choice?.obj("delta") ?: row)
+        // The generic Completions decoder also supports newline-delimited
+        // records. OkHttp can deliver a single JSON object split over data lines.
+        val wireData = if ('\n' in data || '\r' in data) row.toString() else data
+        val chunks = parser.accept(SseEvent(id = id, event = type, data = wireData)).chunks
+        val images = if (responseTerminal) generatedImages.terminal(row.obj("response")) else emptyList()
+        return images + nativeReply.bindText(messageId, chunks) + updates
     }
 }
 
@@ -256,18 +250,67 @@ private class KuanNativeReply {
     private var markdown: Pair<String, String>? = null
     private var sources: Pair<String, List<UIMessageAnnotation.UrlCitation>>? = null
     private var cards: Pair<String, List<KuanWebCard>>? = null
+    private val revisions = mutableMapOf<String, Long>()
+    private val textBindings = mutableMapOf<String, String>()
 
-    fun accept(id: String?, delta: JsonObject) {
-        if (!delta.string("content").isNullOrEmpty() && id != null) messageId = id
+    fun bindText(id: String?, chunks: List<StreamChunk>): List<StreamChunk> = buildList {
+        val incoming = id?.kuanWebMessageId()
+        for (chunk in chunks) when (chunk) {
+            is StreamChunk.TextStart -> if (incoming == null) add(chunk) else {
+                textBindings[chunk.id] = incoming
+                add(chunk.copy(id = streamId(chunk.id, incoming)))
+            }
+            is StreamChunk.TextDelta -> {
+                val previous = textBindings[chunk.id]
+                val key = incoming ?: previous
+                if (key == null) add(chunk) else {
+                    if (previous != null && previous != key) add(StreamChunk.TextEnd(streamId(chunk.id, previous)))
+                    textBindings[chunk.id] = key
+                    if (chunk.text.isNotEmpty()) messageId = key
+                    add(chunk.copy(id = streamId(chunk.id, key), metadata = JsonObject(
+                        chunk.metadata.orEmpty() + (KUAN_WEB_MESSAGE_ID to JsonPrimitive(key))
+                    )))
+                }
+            }
+            is StreamChunk.TextEnd -> {
+                val previous = textBindings.remove(chunk.id)
+                add(if (previous == null) chunk else chunk.copy(id = streamId(chunk.id, previous)))
+            }
+            else -> add(chunk)
+        }
+    }
+
+    private fun streamId(id: String, message: String) = "$id:kuan:$message"
+
+    fun accept(id: String?, delta: JsonObject): List<StreamChunk> {
         delta.obj("kuan_native_markdown")?.let { snapshot ->
             if (snapshot.string("source") != "chatgpt" || snapshot.string("format") != "text/markdown") return@let
             val key = snapshot.replyId() ?: return@let
+            if (id != null && id != key) return@let
             val text = snapshot.string("text")?.takeIf { it.length in 1..MAX_PRESENTATION } ?: return@let
             markdown = key to text
         }
         delta.obj("kuan_native_presentation")?.let { snapshot ->
             if (snapshot.string("source") != "chatgpt" || snapshot.int("version") != 1) return@let
             val key = snapshot.replyId() ?: return@let
+            if (id != null && id != key) return@let
+            val revision = snapshot.long("revision")
+            if (revision != null) {
+                if (revision < 0 || revision <= (revisions[key] ?: -1) || key !in revisions && revisions.size >= 8 ||
+                    snapshot.toString().length > MAX_RICH_SNAPSHOT) return emptyList()
+                revisions[key] = revision
+                // Old query-tag snapshots can coexist with the revisioned
+                // envelope. They never participate in binding DIL slots.
+                if (snapshot.array("anchors").isNullOrEmpty()) {
+                    cards = key to snapshot.nativeWebCards().filter { it.images.isNotEmpty() }
+                } else if (cards?.first == key) cards = null
+                return listOf(StreamChunk.TextDelta("kuan-rich:$key", "", buildJsonObject {
+                    put(KUAN_WEB_MESSAGE_ID, key)
+                    put(KUAN_WEB_PRESENTATION, JsonObject(snapshot.filterKeys {
+                        it in setOf("version", "source", "message_id", "revision", "anchors", "components", "references")
+                    }))
+                }))
+            }
             val references = snapshot.array("components").orEmpty().asSequence().take(96)
                 .filterIsInstance<JsonObject>().filter { it.string("kind") == "Cite" }
                 .flatMap { it.array("sources").orEmpty().asSequence().take(32) }
@@ -275,6 +318,7 @@ private class KuanNativeReply {
             sources = key to references
             cards = key to snapshot.nativeWebCards()
         }
+        return emptyList()
     }
 
     fun finish(chunks: List<StreamChunk>): List<StreamChunk> = buildList {
@@ -282,7 +326,10 @@ private class KuanNativeReply {
         if (snapshot != null) {
             // Use a metadata-only event so the regular text stream is never concatenated with a snapshot.
             val id = "kuan-terminal-presentation"
-            add(StreamChunk.TextStart(id, buildJsonObject { put(KUAN_NATIVE_MARKDOWN, snapshot) }))
+            add(StreamChunk.TextStart(id, buildJsonObject {
+                put(KUAN_NATIVE_MARKDOWN, snapshot)
+                markdown?.first?.let { put(KUAN_WEB_MESSAGE_ID, it) }
+            }))
             add(StreamChunk.TextEnd(id))
         }
         sources?.takeIf { messageId == null || it.first == messageId }?.second?.takeIf { it.isNotEmpty() }?.let {
@@ -291,8 +338,8 @@ private class KuanNativeReply {
         cards?.takeIf { messageId == null || it.first == messageId }?.let { (id, results) ->
             addAll(results.toWebCardChunks(id))
         }
-        addAll(chunks)
+        addAll(bindText(null, chunks))
     }
 
-    private fun JsonObject.replyId() = string("message_id")?.takeIf { it.length in 1..128 }
+    private fun JsonObject.replyId() = string("message_id")?.kuanWebMessageId()
 }

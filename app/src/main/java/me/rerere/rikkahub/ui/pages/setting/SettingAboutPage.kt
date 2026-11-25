@@ -210,7 +210,9 @@ fun SettingAboutPage() {
                             headlineContent = { Text(stringResource(R.string.about_page_website)) },
                         )
                         item(
-                            onClick = { context.openUrl("$KUAN_ORIGIN/downloads/android.html#source") },
+                            onClick = {
+                                context.openUrl("https://github.com/larryllr/rikkahub/tree/kuanapi-v" + BuildConfig.VERSION_NAME)
+                            },
                             leadingContent = { CardGroupIcon(HugeIcons.Code, containerColor = containerColor, contentColor = contentColor) },
                             headlineContent = { Text(stringResource(R.string.kuan_source_code)) },
                         )

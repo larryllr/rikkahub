@@ -1,13 +1,13 @@
 # 宽 API 原生候选：构建与验收
 
-记录日期：2026-11-25（北京时间）。此分支从 RikkaHub 3.3.1 派生，宽 API 2.0 使用与经典版分离的分发渠道。见 [2.0.6 富回复标签](RELEASE-2.0.6.md)、[2.0.5 正文插图与回复布局](RELEASE-2.0.5.md)、[2.0.4 功能迁移](RELEASE-2.0.4.md)、[2.0.3 问答与布局](RELEASE-2.0.3.md)、[2.0.2 入口](RELEASE-2.0.2.md)、[2.0.1 生图接入](RELEASE-2.0.1.md) 和 [2.0.0 首次发布](RELEASE-2.0.md)。
+记录日期：2026-11-25（北京时间）。此分支从 RikkaHub 3.3.1 派生，宽 API 2.0 使用与经典版分离的分发渠道。见 [2.0.7 富回复兼容](RELEASE-2.0.7.md)、[2.0.6 富回复标签](RELEASE-2.0.6.md)、[2.0.5 正文插图与回复布局](RELEASE-2.0.5.md)、[2.0.4 功能迁移](RELEASE-2.0.4.md)、[2.0.3 问答与布局](RELEASE-2.0.3.md)、[2.0.2 入口](RELEASE-2.0.2.md)、[2.0.1 生图接入](RELEASE-2.0.1.md) 和 [2.0.0 首次发布](RELEASE-2.0.md)。
 
 ## 源码与版本
 
 - 上游：<https://github.com/rikkahub/rikkahub/tree/2435dbdf4690fe26d424b8d1ab778bcde9c6cd75>，标签 `3.3.1`。
 - 基准宽 API 正式 Android：`1.6.10 / code 33`。安装包和安装包更新清单不改；经典版设置中新下载链接随单独的 Chat 资源包发布。
-- 2.0 保留预览的包名 `com.kuanapi.app.nativepreview`，版本为 `2.0.6 / code 9`，Debug 变体额外有 `.debug`。它与经典宽 API `com.kuanapi.app` 及官方 RikkaHub 并装；用原生版签名可升级早期 2.0。
-- 对应客户端源保留 AGPL-3.0 和原作者版权，参见根目录 `LICENSE`。对外分发派生 APK 时同时提供与安装包精确对应的完整源码、补丁、许可证和构建步骤。此仓只调用服务端 HTTP 公开接口，不包含私有服务端源码、数据库、用户内容、生产签名或配置。
+- 2.0 保留预览的包名 `com.kuanapi.app.nativepreview`，此源码对应 `2.0.7 / code 10`。Debug 变体额外有 `.debug`。它与经典宽 API `com.kuanapi.app` 及官方 RikkaHub 并装；用原生版签名可升级早期 2.0。
+- 对应客户端源保留 AGPL-3.0 和原作者版权，参见根目录 `LICENSE`。从 2.0.7 起，完整对应源码发布在 GitHub 的版本标签中，应用「关于」链接到对应标签，更新清单记录源码提交。此仓只调用服务端 HTTP 公开接口，不包含私有服务端源码、数据库、用户内容、生产签名或配置。
 
 ## 构建要求
 
@@ -34,10 +34,10 @@ Windows 若因路径编码导致 Gradle JVM test worker 加载失败，显式执
 Android 设备用例使用 `:app:assembleGithubDebugAndroidTest`。安装 Debug 和测试 APK 后，在测试设备运行以下用例。夹具在 OkHttp 拦截请求并返回合成数据。
 
 ```powershell
-adb -s <test-device> shell am instrument -w -r -e class "me.rerere.rikkahub.data.kuan.KuanNativeContractTest,me.rerere.rikkahub.data.kuan.KuanFollowUpsTest,me.rerere.rikkahub.data.kuan.KuanReplyLayoutTest,me.rerere.rikkahub.data.kuan.KuanStudioTest" com.kuanapi.app.nativepreview.debug.test/androidx.test.runner.AndroidJUnitRunner
+adb -s <test-device> shell am instrument -w -r -e class "me.rerere.rikkahub.data.kuan.KuanNativeContractTest,me.rerere.rikkahub.data.kuan.KuanFollowUpsTest,me.rerere.rikkahub.data.kuan.KuanReplyLayoutTest,me.rerere.rikkahub.data.kuan.KuanRichReplyTest,me.rerere.rikkahub.data.kuan.KuanStudioTest" com.kuanapi.app.nativepreview.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-`tools/kuan-presentation` 是 `app/src/main/assets/kuan-presentation.js` 的对应源码。它源于宽 API 维护仓的 `frontend/openui/{web-presentation,declarative-forms}.mjs`，维护基准记录为 `45c62fb5380a9d2608b10ecbb42810ae2f79f1c8`。`npm run build` 从同一份投影规则生成 APK 内的解析器和 `KuanPresentationGrammar.kt`；不要手改生成文件。仓内包含 Acorn 8.15.0 和 Acorn JSX 5.3.2 的许可证文本与 npm 锁定记录。
+`tools/kuan-presentation` 是 `app/src/main/assets/kuan-presentation.js` 的对应源码。它源于宽 API 维护仓的 `frontend/openui/{web-presentation,declarative-forms}.mjs`，维护基准记录为 `45c62fb5380a9d2608b10ecbb42810ae2f79f1c8`。`npm run build` 从同一份投影规则生成 APK 内的解析器和 `KuanPresentationGrammar.kt`；不要手改生成文件。仓内包含 Acorn 8.15.0 和 Acorn JSX 5.3.2 的许可证文本与 npm 锁定记录。端到端的格式覆盖、传输协议和回放步骤见 [富输出协议与验收](RICH-OUTPUT.md)。
 
 默认 Debug 使用本机 debug 签名，不能作为发布签名。RikkaHub 上游的 release 构建可通过本机忽略的 `local.properties` 提供 `storeFile`、`storePassword`、`keyAlias`、`keyPassword`。也可在输出未签名 APK 后用 SDK 的 `zipalign` 和 `apksigner` 独立签名；只用候选专用密钥，不用正式宽 API 或 RikkaHub 签名。不要把密钥或含密钥的配置写进命令历史、审计包或源码。
 

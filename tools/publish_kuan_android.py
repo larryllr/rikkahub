@@ -5,16 +5,20 @@ from hashlib import sha256 as new_sha256
 from pathlib import Path
 import json
 import os
+import re
 import shutil
+import subprocess
+import sys
 import tempfile
+from urllib.request import Request, urlopen
 
 
-VERSION = '2.0.6'
-VERSION_CODE = 9
-PREVIOUS_VERSION = '2.0.5'
-PREVIOUS_CODE = 8
-PREVIOUS_MANIFEST_SHA = 'ccbcdcc8ee5dddb8762b660efe4d0af4f29b33389c911ee2a84f2adb0be31951'
-PREVIOUS_PAGE_SHA = '244c112c867a72c028f8a05175c9661aa04ed95fb89e27f82176a3d21d6fee0a'
+VERSION = '2.0.7'
+VERSION_CODE = 10
+PREVIOUS_VERSION = '2.0.6'
+PREVIOUS_CODE = 9
+PREVIOUS_MANIFEST_SHA = '6c271715bd5aaabc6b427260839884b3d4608ab421ba02138e716181b5aff337'
+PREVIOUS_PAGE_SHA = 'ed6b1425a09147a324f3fecaa22d06837ce2e4437dc63b1eabdb9ab496658a0d'
 PACKAGE = 'com.kuanapi.app.nativepreview'
 ORIGIN = 'https://kuanapi.kuankuan.de5.net'
 PUBLIC = Path('/opt/kuanapi-ha/sub2api/data/public/downloads')
@@ -23,6 +27,7 @@ FRONTEND = Path('/opt/sub2api/frontend-dist/current')
 PAGE = PUBLIC / 'android.html'
 CHANNEL = PUBLIC / 'mobile-native'
 ABIS = ('arm64-v8a', 'x86_64')
+SOURCE_REPO = 'larryllr/rikkahub'
 
 
 def sha256(path):
@@ -54,7 +59,9 @@ def protected_snapshot(approval):
     protected = (
         CORE, approval.APPROVAL, current / 'files.sha256', current / 'index.html',
         PUBLIC / 'mobile-latest.json', PUBLIC / 'kuanapi.apk', legacy_apk,
-        PUBLIC / 'chat-resources/latest.json',
+        PUBLIC / 'chat-resources/latest.json', PUBLIC / 'kuanapi-download-center.html',
+        PUBLIC.parent / 'launcher/latest.json', PUBLIC / 'CodexSub2APIOnlineLauncher.exe',
+        Path('/etc/kuanapi/gateway/runtime.json'),
     )
     return {'chat': current.name, 'files': {path.name if path.parent == current else str(path): sha256(path)
                                            for path in protected}}
@@ -75,7 +82,13 @@ def verify_release(channel, version, code, *, exact=False):
         file = release / name
         require(item['name'] == name and item['url'] == f'{ORIGIN}/downloads/mobile-native/{version}/{name}'
                 and item['bytes'] == file.stat().st_size and item['sha256'] == sha256(file), 'APK differs from update metadata')
-    names = {f'kuanapi-{version}-source.zip', 'logo.png', *(item['name'] for item in entries)}
+    names = {'logo.png', *(item['name'] for item in entries)}
+    if code >= 10:
+        require(manifest.get('source_url') == f'https://github.com/{SOURCE_REPO}/tree/kuanapi-v{version}'
+                and re.fullmatch(r'[0-9a-f]{40}', manifest.get('source_commit', '')),
+                'The equivalent GitHub source is not recorded in the manifest')
+    else:
+        names.add(f'kuanapi-{version}-source.zip')
     expected = {}
     for line in (release / 'SHA256SUMS.txt').read_text(encoding='ascii').splitlines():
         checksum, name = line.split('  ', 1)
@@ -88,6 +101,15 @@ def verify_release(channel, version, code, *, exact=False):
     if exact:
         require({p.name for p in channel.iterdir()} == {version, 'latest.json'}, 'Unexpected staging channel members')
     return {'manifest': sha256(channel / 'latest.json'), 'release': expected}
+
+
+def verify_source_ref(version, expected):
+    url = f'https://api.github.com/repos/{SOURCE_REPO}/git/ref/tags/kuanapi-v{version}'
+    request = Request(url, headers={'User-Agent': 'KuanAPI-Release-Verification/1.0'})
+    with urlopen(request, timeout=20) as response:
+        require(response.status == 200 and response.url == url, 'GitHub source tag unavailable')
+        obj = json.load(response)['object']
+    require(obj['type'] == 'commit' and obj['sha'] == expected, 'GitHub tag does not match the APK source commit')
 
 
 def replace_public(source, target):
@@ -117,7 +139,9 @@ def main():
     page_sha = sha256(staging_page)
     content = staging_page.read_text(encoding='utf-8')
     require('id="native"' in content and f'mobile-native/{VERSION}/kuanapi-{VERSION}-arm64-v8a.apk' in content
-            and 'kuanapi-1.6.10.apk' in content, 'The new shelf must expose both editions')
+            and 'kuanapi-1.6.10.apk' in content and '-source.zip' not in content
+            and not re.search(r'<a\b[^>]*href=["\'][^"\']*github\.com', content, re.I),
+            'The Android download page must list both editions and no source downloads')
     previous = incoming / 'previous'
     old_page = previous / PAGE.name
     old_manifest = previous / 'latest.json'
@@ -146,10 +170,16 @@ def main():
         old_release = verify_release(CHANNEL, PREVIOUS_VERSION, PREVIOUS_CODE)
         require(sha256(PAGE) == PREVIOUS_PAGE_SHA and old_release['manifest'] == PREVIOUS_MANIFEST_SHA,
                 f'The public {PREVIOUS_VERSION} baseline changed; review before advancing the channel')
-        require(not os.path.lexists(published) and not os.path.lexists(previous), 'Release version already staged or published')
-        previous.mkdir(mode=0o700)
-        shutil.copyfile(PAGE, old_page)
-        shutil.copyfile(live_manifest, old_manifest)
+        require(not os.path.lexists(published), 'Release version already published')
+        source_commit = read_json(incoming / CHANNEL.name / 'latest.json')['source_commit']
+        verify_source_ref(VERSION, source_commit)
+        if previous.exists():
+            require(sha256(old_page) == PREVIOUS_PAGE_SHA and sha256(old_manifest) == PREVIOUS_MANIFEST_SHA,
+                    'Previous release was not fully restored')
+        else:
+            previous.mkdir(mode=0o700)
+            shutil.copyfile(PAGE, old_page)
+            shutil.copyfile(live_manifest, old_manifest)
         with tempfile.TemporaryDirectory(prefix='kuan-native-publish-', dir=PUBLIC.parent.parent) as temporary:
             staged = Path(temporary)
             shutil.copytree(incoming / CHANNEL.name, staged / CHANNEL.name)
@@ -166,11 +196,13 @@ def main():
                 require(all(sha256(CHANNEL / PREVIOUS_VERSION / name) == checksum
                             for name, checksum in old_release['release'].items()), 'The previous native release changed concurrently')
                 require(protected_snapshot(approval) == baseline, 'A protected legacy release changed concurrently')
+                subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('verify_kuan_android_public.py')),
+                                str(incoming), str(PUBLIC / 'mobile-latest.json')], check=True, timeout=220)
             except Exception:
                 switch_pointers(old_manifest, old_page)
                 published.rename(staged / CHANNEL.name / VERSION)
                 raise
-        print(json.dumps({'published': VERSION, 'source_channel': prepared, 'download_page': page_sha,
+        print(json.dumps({'published': VERSION, 'source_commit': source_commit, 'source_channel': prepared, 'download_page': page_sha,
                           'legacy_untouched': True, 'chat': baseline['chat']}))
 
 

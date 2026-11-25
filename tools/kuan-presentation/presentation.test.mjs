@@ -167,3 +167,124 @@ test('native tag detection uses complete names and holds partial tags only while
   assert.equal(project(`${code}\n\n<badge>Real</badge><badge>Next</badge>`).text, `${code}\n\n**Real** **Next**`);
   assert.equal(project('Read.\n\n<card><list><list-item>One</list-item></list></card>').text, 'Read.\n\nOne');
 });
+
+const slot = n => '\uE000DIL' + n + '\uE001';
+const wire = (type, body) => '\uE200' + type + '\uE202' + body + '\uE201';
+const presentation = (components, anchors = [], references = []) => ({
+  version: 1, source: 'chatgpt', message_id: 'message-1', revision: 1, components, anchors, references,
+});
+
+test('unclosed or unknown packets do not eat later prose, whitespace or boxed math', () => {
+  const tail = '\n\nKeep this paragraph.\n\n    keep these spaces\n\n$$\\boxed{x^2}$$.';
+  const broken = 'Before \uE200cite\uE202turn0search0';
+  for (const streaming of [true, false]) {
+    const result = project(broken + tail, {}, streaming);
+    assert.equal(result.text, 'Before ' + tail);
+    assert.equal(project('Read ' + wire('unknown_card', '{"type":"x"}') + ' next.', {}, streaming).text, 'Read  next.');
+    assert.deepEqual(project(wire('unknown_card', '')).unknown, ['unknown_card']);
+  }
+  const syntax = '\u0060' + wire('cite', 'turn0search0') + ' ' + slot(3) + '\u0060';
+  const fenced = '\u0060'.repeat(3) + 'text\n' + wire('unknown_card', '{}') + '\n' + '\u0060'.repeat(3);
+  assert.equal(project(syntax + '\n\n' + fenced + tail).text, syntax + '\n\n' + fenced + tail);
+  assert.equal(project('A \\uE200cite\\uE202turn0search0\n\nB').text, 'A \n\nB');
+});
+
+test('slot and component identity survive out-of-order same-kind results', () => {
+  const first = { id: 'first', kind: 'AsyncImage', query: 'same', status: 'resolved',
+    images: [{ url: 'https://images.example.com/first.png' }, { url: 'https://images.example.com/second.png' }] };
+  const second = { id: 'second', kind: 'AsyncImage', query: 'same', status: 'resolved',
+    images: [{ url: 'https://images.example.com/third.png' }] };
+  const body = 'Opening.' + slot(7) + 'Between.' + slot(1) + 'Closing.';
+  const anchors = [{ slot_id: 'DIL1', component_id: 'second' }, { slot_id: 'DIL7', component_id: 'first' }];
+  const projectWith = (rows, streaming = false) => project(body, {}, streaming, false, [], presentation(rows, anchors));
+  const loading = projectWith([second], true);
+  assert.deepEqual(loading.blocks.map(item => item.status), ['pending', 'resolved']);
+  const finished = projectWith([second, first, first]);
+  assert.deepEqual(finished.blocks.map(item => item.images.map(i => i.url)), [first.images.map(i => i.url), second.images.map(i => i.url)]);
+  assert.deepEqual(finished, projectWith([first, second]));
+  const [a, b] = finished.blocks.map(item => item.offset);
+  assert.match(finished.text.slice(0, a), /Opening\./u);
+  assert.match(finished.text.slice(a, b), /Between\./u);
+  assert.match(finished.text.slice(b), /Closing\./u);
+  const unbound = project(body, {}, false, false, [], presentation([second, first]));
+  assert.deepEqual(unbound.blocks.map(item => item.status), ['unavailable', 'unavailable']);
+  assert.ok(!unbound.blocks.some(item => item.images.length));
+  assert.doesNotMatch(JSON.stringify(finished), /[\uE000-\uF8FF]/u);
+});
+
+test('standalone table primitives and typed charts render real data, not tokens', () => {
+  const table = '<table-section><table-row><table-cell header>Name</table-cell><table-cell header>Value</table-cell></table-row>'
+    + '<table-row><table-cell>H|I</table-cell><table-cell>3</table-cell></table-row></table-section>';
+  const chart = wire('visualize', JSON.stringify({ style: 'bar', title: 'Downloads',
+    x_axis: { data: ['Mon', 'Tue'] }, series: [{ values: [2, 7] }] }));
+  const result = project('Start\n\n' + table + '\n\n' + chart + '\n\nEnd');
+  assert.match(result.text, /\| Name \| Value \|\n\| --- \| --- \|\n\| H\\\|I \| 3 \|/u);
+  assert.doesNotMatch(result.text, /<table-|visualize/u);
+  assert.equal(result.blocks[0].chart.title, 'Downloads');
+  assert.deepEqual(result.blocks[0].chart.series[0].values, [2, 7]);
+  assert.equal(project(wire('visualize', '{}')).blocks[0].status, 'unavailable');
+});
+
+test('inline references resolve only matching IDs and owned file routes', () => {
+  const refs = [
+    { ref_id: 'turn0search1', title: 'A source', url: 'https://example.com/source', number: 2 },
+    { ref_id: 'file-ref', title: 'Report', file_url: '/kuan/chat-assets/asset-' + 'a'.repeat(32), number: 3 },
+    { ref_id: 'turn0search2', title: 'Credential URL', url: 'https://example.com/private?sig=hidden' },
+    { ref_id: 'turn0search3', title: 'Credential fragment', url: 'https://example.com/private#access_token=hidden' },
+  ];
+  const input = 'Source ' + wire('cite', 'turn0search1') + ' and [2]. File ' + wire('filecite', 'file-ref')
+    + ' ' + wire('memcite', 'PC\uE2024') + ' ' + wire('i', 'turn0search2') + wire('cite', 'turn0search3')
+    + '\n\nNormal link [2](https://example.com/normal). Preserve |||| and :::: here.';
+  const result = project(input, {}, false, false, [], presentation([], [], refs));
+  assert.equal((result.text.match(/https:\/\/example\.com\/source/gu) || []).length, 2);
+  assert.match(result.text, /asset-a{32}/u);
+  assert.match(result.text, /\[2\]\(https:\/\/example\.com\/normal\)/u);
+  assert.match(result.text, /Preserve \|\|\|\| and :::: here/u);
+  assert.deepEqual(result.links, [{ title: 'A source', url: 'https://example.com/source' }]);
+  assert.doesNotMatch(JSON.stringify(result), /PC|=hidden|turn0search/u);
+});
+
+test('structured questions, generic cards and progress do not run upstream handlers', () => {
+  const p = presentation([
+    { id: 'q', kind: 'ask_user_input_v2', status: 'resolved', questions: [
+      { question: 'Select an interval', choices: [{ label: 'Week', prompt: 'Show a week' }, { label: 'Fake', handler: 'evil()' }] },
+    ] },
+    { id: 'm', kind: 'map', status: 'resolved', label: 'Museum',
+      sources: [{ url: 'https://example.com/map', title: 'Map' }], handler: 'privateHandler' },
+    { id: 'x', kind: 'app_block', status: 'unsupported', html: '<script>no</script>' },
+  ], [
+    { slot_id: 'DIL0', component_id: 'q' }, { slot_id: 'DIL1', component_id: 'm' }, { slot_id: 'DIL2', component_id: 'x' },
+  ]);
+  const input = slot(0) + slot(1) + slot(2) + wire('delayed_image_gen_card', '{}');
+  const live = project(input, {}, true, false, [], p);
+  assert.equal(live.blocks[3].status, 'pending');
+  const final = project(input, {}, false, false, [], p);
+  assert.equal(final.blocks[3].status, 'unavailable');
+  assert.deepEqual(final.blocks[0].questions[0].choices, [{ label: 'Week', prompt: 'Show a week' }]);
+  assert.equal(final.blocks[1].links[0].url, 'https://example.com/map');
+  assert.equal(final.blocks[2].status, 'unsupported');
+  assert.doesNotMatch(JSON.stringify(final), /privateHandler|<script>|evil\(\)/u);
+});
+
+test('long replies stay inside the same wire grammar instead of leaking markers', () => {
+  const prefix = 'plain paragraph\n\n'.repeat(17000);
+  const result = project(prefix + 'First ' + wire('cite', 'turn0search0') + '\n\nLast.' + slot(100));
+  assert.ok(result.text.startsWith(prefix));
+  assert.match(result.text, /First \n\nLast\./u);
+  assert.doesNotMatch(result.text, /[\uE000-\uF8FF]/u);
+  assert.equal(result.blocks.length, 1);
+});
+
+test('complete typed packets and structured source rows use their actual payloads', () => {
+  const map = wire('map', '{"title":"Museum","locations":[{"title":"Open map","url":"https://example.com/place"}]}');
+  const image = wire('image_group', '{"images":[{"content_url":"https://images.example.com/exact.png","url":"https://example.com/source"}]}');
+  const ref = { ref_id: 'turn0view1', url: 'https://example.com/source', title: 'Verified source' };
+  const text = 'Lead\n\n' + map + '\n\n' + image + '\n\n'
+    + '20261125T14:20:37 Verified source: |||| https://example.com/source\n\n'
+    + '20261125T14 Host note: :::: not a source.';
+  const result = project(text, {}, false, false, [], presentation([], [], [ref]));
+  assert.equal(result.blocks[0].links[0].url, 'https://example.com/place');
+  assert.equal(result.blocks[1].images[0].url, 'https://images.example.com/exact.png');
+  assert.match(result.text, /- \[Verified source\]\(<https:\/\/example\.com\/source>\)/u);
+  assert.match(result.text, /Host note: :::: not a source\./u);
+});

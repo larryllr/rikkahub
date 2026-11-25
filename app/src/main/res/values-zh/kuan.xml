@@ -99,4 +99,17 @@
   <string name="kuan_price_all_efforts">全部推理强度</string>
   <string name="kuan_price_multiplier">扣费倍率</string>
   <string name="kuan_price_minimum">最低扣费（美元）</string>
+  <string name="kuan_rich_content">富回复</string>
+  <string name="kuan_rich_image">图片</string>
+  <string name="kuan_rich_chart">图表</string>
+  <string name="kuan_rich_table">表格</string>
+  <string name="kuan_rich_map">地图</string>
+  <string name="kuan_rich_products">商品</string>
+  <string name="kuan_rich_links">来源</string>
+  <string name="kuan_rich_media">媒体</string>
+  <string name="kuan_rich_questions">追问</string>
+  <string name="kuan_rich_pending">%1$s加载中…</string>
+  <string name="kuan_rich_unsupported">此应用暂不支持%1$s交互</string>
+  <string name="kuan_rich_unavailable">未收到%1$s数据</string>
+  <string name="kuan_rich_completed">%1$s已完成</string>
 </resources>

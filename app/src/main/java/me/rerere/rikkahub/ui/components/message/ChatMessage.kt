@@ -74,7 +74,10 @@ import me.rerere.rikkahub.data.kuan.KUAN_WEB_CARDS
 import me.rerere.rikkahub.data.kuan.KuanWebCard
 import me.rerere.rikkahub.data.kuan.finishKuanPresentation
 import me.rerere.rikkahub.data.kuan.inlineKuanWebImages
+import me.rerere.rikkahub.data.kuan.int
 import me.rerere.rikkahub.data.kuan.kuanFormSource
+import me.rerere.rikkahub.data.kuan.kuanRichBlocks
+import me.rerere.rikkahub.data.kuan.kuanRichImages
 import me.rerere.rikkahub.data.kuan.needsKuanPresentation
 import me.rerere.rikkahub.data.kuan.webCards
 import me.rerere.rikkahub.data.kuan.withKuanQuestionHistory
@@ -171,7 +174,7 @@ fun ChatMessage(
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         if (!message.parts.isEmptyUIMessage() || message.annotations.isNotEmpty() ||
-            message.parts.any { it is UIMessagePart.Text && it.kuanFormSource() != null }
+            message.parts.any { it is UIMessagePart.Text && (it.kuanFormSource() != null || it.kuanRichBlocks().isNotEmpty()) }
         ) {
             Row(
                 modifier = Modifier
@@ -208,6 +211,7 @@ fun ChatMessage(
                 model = model,
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
+                onFollowUp = onFollowUp,
                 onUserMessageClick = if (message.role == MessageRole.USER) onEdit else null,
             )
 
@@ -329,6 +333,7 @@ internal fun MessagePartsBlock(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onUserMessageClick: (() -> Unit)? = null,
+    onFollowUp: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     // 消息输出HapticFeedback
@@ -375,8 +380,10 @@ internal fun MessagePartsBlock(
             if (url in anchors) url to card.images else null
         }.toMap()
     }
-    val unplaced = remember(webCards, inline) {
+    val unplaced = remember(parts, webCards, inline) {
         val placed = inline.values.flatten().mapTo(HashSet()) { it.url }
+        parts.filterIsInstance<UIMessagePart.Text>().flatMap { it.kuanRichBlocks() }
+            .flatMap { it.kuanRichImages() }.forEach { placed += it.url }
         webCards.flatMap { it.images }.filterNot { it.url in placed }.distinctBy { it.url }
     }
     val markdownImages = remember(inline) {
@@ -417,7 +424,7 @@ internal fun MessagePartsBlock(
                     is UIMessagePart.Text -> {
                         // 只有正在生成的最后一段文字可能停在没写完的语法上
                         val streamingText = loading && block.index == lastContentIndex
-                        val textContent = @Composable {
+                        val textContent = @Composable { text: String, lastSegment: Boolean ->
                             if (role == MessageRole.USER) {
                                 ChatMessageBubble(
                                     role = role,
@@ -429,7 +436,7 @@ internal fun MessagePartsBlock(
                                         .animateContentSize(),
                                 ) {
                                     MarkdownBlock(
-                                        content = part.text.replaceRegexes(
+                                        content = text.replaceRegexes(
                                             assistant = assistant,
                                             scope = AssistantAffectScope.USER,
                                             visual = true,
@@ -439,7 +446,7 @@ internal fun MessagePartsBlock(
                                 }
                             } else {
                                 if (settings.displaySetting.showAssistantBubble) {
-                                    val content = part.text.replaceRegexes(
+                                    val content = text.replaceRegexes(
                                         assistant = assistant,
                                         scope = AssistantAffectScope.ASSISTANT,
                                         visual = true,
@@ -463,7 +470,7 @@ internal fun MessagePartsBlock(
                                                 ) {
                                                     MarkdownBlock(
                                                         content = paragraph,
-                                                        streaming = streamingText && index == paragraphs.lastIndex,
+                                                        streaming = lastSegment && streamingText && index == paragraphs.lastIndex,
                                                         renderImage = renderImage.takeIf { inline.isNotEmpty() },
                                                         onClickCitation = handleClickCitation,
                                                     )
@@ -473,12 +480,12 @@ internal fun MessagePartsBlock(
                                     }
                                 } else {
                                     MarkdownBlock(
-                                        content = part.text.replaceRegexes(
+                                        content = text.replaceRegexes(
                                             assistant = assistant,
                                             scope = AssistantAffectScope.ASSISTANT,
                                             visual = true,
                                         ),
-                                        streaming = streamingText,
+                                        streaming = lastSegment && streamingText,
                                         renderImage = renderImage.takeIf { inline.isNotEmpty() },
                                         onClickCitation = handleClickCitation,
                                         modifier = Modifier
@@ -490,7 +497,22 @@ internal fun MessagePartsBlock(
 
                         // Markdown 由 BetterText 渲染，要用它自己的选择容器；生成中也可以选择
                         SelectableContent {
-                            textContent()
+                            val cards = remember(part) { part.kuanRichBlocks() }
+                            if (cards.isEmpty()) textContent(part.text, true)
+                            else {
+                                var cursor = 0
+                                cards.forEachIndexed { index, card ->
+                                    key(index) {
+                                        val offset = card.int("offset") ?: cursor
+                                        val text = part.text.substring(cursor, offset).trimEnd()
+                                        if (text.isNotBlank()) textContent(text, false)
+                                        KuanRichReplyBlock(card, loading, onFollowUp)
+                                        cursor = offset
+                                    }
+                                }
+                                val tail = part.text.substring(cursor).trimStart('\r', '\n')
+                                if (tail.isNotBlank()) textContent(tail, true)
+                            }
                         }
                     }
 

@@ -27,6 +27,7 @@ private const val LAYOUT_PROJECTED = "kuan:layout_v2"
 private const val INLINE_IMAGES = "kuan:inline_images"
 internal const val KUAN_NATIVE_MARKDOWN = "kuan:native_markdown"
 internal const val MAX_PRESENTATION = 256 * 1024
+private const val MAX_RICH_SOURCE = 1024 * 1024
 private val imageMarker = Regex("""<AsyncImage(?:Group)?(?=[\s/>]|$)|(?:\uE200|\\u(?:\{e200\}|e200))image_group""")
 private val sourceHeading = Regex(
     """^[ \t]{0,3}(?:#{1,6}[ \t]+)?(?:\*\*|__)?(?:\u6765\u6e90|\u53c2\u8003\u6765\u6e90|\u53c2\u8003\u8d44\u6599|\u5f15\u7528\u6765\u6e90|sources?|references?|citations?)(?=[:\uff1a*_\s]|$)""",
@@ -36,51 +37,58 @@ private val scriptLock = Mutex()
 @Volatile private var bundledScript: String? = null
 
 internal class KuanPresentationPreview(private val context: Context) {
-    private data class Projection(val source: String, val visible: String, val at: Long)
+    private data class Projection(val source: String, val snapshot: JsonObject?, val visible: UIMessagePart.Text, val at: Long)
 
     private val projections = mutableMapOf<Int, Projection>()
 
     suspend fun render(message: UIMessage): UIMessage {
         if (message.role != MessageRole.ASSISTANT) return message
-        return message.copy(parts = message.parts.joinSplitKuanPresentation(withImages = false).mapIndexed { index, part ->
-            if (part !is UIMessagePart.Text || !part.text.hasKuanMarkup(streaming = true)) return@mapIndexed part
+        val snapshots = message.parts.kuanRichSnapshots()
+        return message.copy(parts = message.parts.joinSplitKuanPresentation(withImages = false).mapIndexedNotNull { index, part ->
+            if (part !is UIMessagePart.Text) return@mapIndexedNotNull part
+            if (part.text.isEmpty() && part.metadata?.obj(KUAN_WEB_PRESENTATION) != null) return@mapIndexedNotNull null
+            val snapshot = part.metadata?.string(KUAN_WEB_MESSAGE_ID)?.let(snapshots::get)
+            val rich = part.text.hasKuanMarkup(streaming = true)
+            if (!rich && snapshot == null) return@mapIndexedNotNull part
             val now = SystemClock.elapsedRealtime()
-            val previous = projections[index]?.takeIf { part.text.startsWith(it.source) }
-            val visible = when {
+            val previous = projections[index]?.takeIf { it.snapshot == snapshot && part.text.startsWith(it.source) }
+            when {
                 previous?.source == part.text -> previous.visible
                 previous != null && now - previous.at < 200 -> previous.visible
                 else -> {
-                    val parsed = projectKuanPresentation(context, part.text, streaming = true)?.string("text")
-                    val text = parsed ?: previous?.visible ?: part.text
-                    projections[index] = Projection(part.text, text, now)
-                    text
+                    val parsed = projectKuanPresentation(context, part.text, streaming = true, plain = !rich, presentation = snapshot)
+                    val visible = part.copy(text = parsed?.string("text") ?: fallbackKuanProse(part.text),
+                        metadata = part.withRichBlocks(parsed))
+                    projections[index] = Projection(part.text, snapshot, visible, now)
+                    visible
                 }
             }
-            part.copy(text = visible)
         })
     }
 }
 
 private fun String.hasKuanMarkup(streaming: Boolean = false) =
-    length <= MAX_PRESENTATION && (kuanPresentationTag.containsMatchIn(this) ||
+    (kuanPresentationTag.containsMatchIn(this) ||
         kuanPresentationControl.containsMatchIn(this) || streaming && kuanPresentationPartialTag.containsMatchIn(this))
 
-private fun String.hasVisibleKuanTag(): Boolean {
-    if (length > MAX_PRESENTATION) return false
-    var tag = kuanPresentationTag.find(this) ?: return false
+private fun String.hasVisibleKuanToken(pattern: Regex): Boolean {
+    var tag = pattern.find(this) ?: return false
     for (code in kuanPresentationCode.findAll(this)) {
         if (tag.range.first < code.range.first) return true
-        if (tag.range.first <= code.range.last) tag = kuanPresentationTag.find(this, code.range.last + 1) ?: return false
+        if (tag.range.first <= code.range.last) tag = pattern.find(this, code.range.last + 1) ?: return false
     }
     return true
 }
 
+private fun String.hasVisibleKuanTag() = hasVisibleKuanToken(kuanPresentationTag)
+
 private fun UIMessagePart.Text.needsProjection(): Boolean {
     val meta = metadata
     if (meta?.flag(PROJECTED) == true) {
-        return meta.flag(LAYOUT_PROJECTED) != true && text.hasVisibleKuanTag()
+        return text.hasVisibleKuanToken(kuanPresentationControl) ||
+            (meta.flag(LAYOUT_PROJECTED) != true && text.hasVisibleKuanTag())
     }
-    return kuanFormSource() != null || nativeMarkdown() != null || text.hasKuanMarkup() ||
+    return kuanFormSource() != null || nativeMarkdown() != null || meta?.obj(KUAN_WEB_PRESENTATION) != null || text.hasKuanMarkup() ||
         text.length <= MAX_PRESENTATION && sourceHeading.containsMatchIn(text)
 }
 
@@ -100,6 +108,7 @@ internal suspend fun finishKuanPresentation(context: Context, message: UIMessage
             JsonObject(mapOf("query" to JsonPrimitive(query), "url" to JsonPrimitive(first.url)))
         }.distinct().take(16))
     val parts = message.parts.joinSplitKuanPresentation(withImages = images.isNotEmpty())
+    val presentations = parts.kuanRichSnapshots()
     val textIndices = parts.indices.filter { parts[it] is UIMessagePart.Text }
     val snapshotIndex = textIndices.lastOrNull { index -> (parts[index] as UIMessagePart.Text).nativeMarkdown() != null }
     val regular = textIndices.filter { index -> (parts[index] as UIMessagePart.Text).text.isNotBlank() }
@@ -112,8 +121,13 @@ internal suspend fun finishKuanPresentation(context: Context, message: UIMessage
         else -> null
     }
     val projectedParts = parts.mapIndexedNotNull { index, part ->
-        if (part !is UIMessagePart.Text || !part.needsProjection() && (index != target || snapshot == null)) {
+        if (part !is UIMessagePart.Text) return@mapIndexedNotNull part
+        val presentation = part.metadata?.string(KUAN_WEB_MESSAGE_ID)?.let(presentations::get)
+        if (!part.needsProjection() && (index != target || snapshot == null) && presentation == null) {
             return@mapIndexedNotNull part
+        }
+        if (part.text.isEmpty() && part.metadata?.obj(KUAN_WEB_PRESENTATION) != null && part.nativeMarkdown() == null) {
+            return@mapIndexedNotNull null
         }
         if (index == snapshotIndex && index != target && part.text.isEmpty()) return@mapIndexedNotNull null
         // Reproject stored display text without rebuilding existing interactions or image anchors.
@@ -123,32 +137,36 @@ internal suspend fun finishKuanPresentation(context: Context, message: UIMessage
         var source = if (native != null && raw.length <= MAX_PRESENTATION && !raw.hasKuanMarkup() &&
             !(native.length < raw.length && raw.startsWith(native))) native else raw
         val rich = source.hasKuanMarkup()
-        var display = if (rich || sourceHeading.containsMatchIn(source)) {
-            projectKuanPresentation(context, source, plain = !rich, images = images) ?: return@mapIndexedNotNull part
+        var display = if (rich || presentation != null || sourceHeading.containsMatchIn(source)) {
+            projectKuanPresentation(context, source, plain = !rich, images = images, presentation = presentation)
         } else null
-        if (source == native && source != raw && display?.array("inlineImages").orEmpty().isNotEmpty()) {
-            val flattened = display?.string("history")?.whitespaceNormalized()
+        if (source == native && source != raw && display != null) {
+            val flattened = display.string("history")?.whitespaceNormalized()
             if (!flattened.isNullOrEmpty() && raw.whitespaceNormalized().startsWith("$flattened ")) {
                 // Media markup can make a shorter terminal snapshot longer than the complete streamed answer.
                 source = raw
                 display = if (sourceHeading.containsMatchIn(raw)) projectKuanPresentation(context, raw, plain = true) else null
             }
         }
-        val text = display?.string("text") ?: source
+        val text = display?.string("text") ?: if (rich) fallbackKuanProse(source) else source
         val groups = display?.array("groups").orEmpty()
-        val history = part.metadata?.string(HISTORY) ?: display?.string("history")
+        val history = part.metadata?.string(HISTORY)?.takeUnless { it.hasVisibleKuanToken(kuanPresentationControl) }
+            ?: display?.string("history")
         citations += display?.array("links").orEmpty().mapNotNull { readKuanCitation(it) }
         if (native != null && native != source && sourceHeading.containsMatchIn(native)) {
             citations += projectKuanPresentation(context, native, plain = true)?.array("links").orEmpty().mapNotNull { readKuanCitation(it) }
         }
         val metadata = part.metadata.orEmpty().toMutableMap()
         metadata.remove(KUAN_NATIVE_MARKDOWN)
+        metadata.remove(KUAN_WEB_PRESENTATION)
+        metadata.remove(KUAN_WEB_MESSAGE_ID)
         metadata.remove(HISTORY)
         metadata[PROJECTED] = JsonPrimitive(true)
         metadata[LAYOUT_PROJECTED] = JsonPrimitive(true)
         display?.array("inlineImages")?.takeIf { it.isNotEmpty() }?.let { inserted ->
             metadata[INLINE_IMAGES] = JsonArray((part.metadata?.array(INLINE_IMAGES).orEmpty() + inserted).distinct().take(16))
         }
+        display?.array("blocks")?.takeIf { it.isNotEmpty() }?.let { metadata[KUAN_RICH_BLOCKS] = it }
         if (!previouslyProjected) {
             metadata.remove(SOURCE)
             metadata.remove(GROUPS)
@@ -168,18 +186,23 @@ internal suspend fun finishKuanPresentation(context: Context, message: UIMessage
 private val projectionWhitespace = Regex("\\s+")
 private fun String.whitespaceNormalized() = trim().replace(projectionWhitespace, " ")
 
+private fun UIMessagePart.Text.withRichBlocks(projection: JsonObject?): JsonObject? {
+    val blocks = projection?.array("blocks")?.takeIf { it.isNotEmpty() } ?: return metadata
+    return JsonObject(metadata.orEmpty() + (KUAN_RICH_BLOCKS to blocks))
+}
+
 // Search/reasoning frames can split one streamed Markdown document in the middle of a tag.
 private fun List<UIMessagePart>.joinSplitKuanPresentation(withImages: Boolean): List<UIMessagePart> {
     if (any { it !is UIMessagePart.Text && it !is UIMessagePart.Reasoning &&
             it !is UIMessagePart.ServerTool && it !is UIMessagePart.Notice }) return this
     val text = filterIsInstance<UIMessagePart.Text>().filter { it.text.isNotEmpty() }
-    if (text.size < 2 || text.sumOf { it.text.length.toLong() } > MAX_PRESENTATION ||
-        text.any { !it.metadata.isNullOrEmpty() }) return this
+    if (text.size < 2 || text.any { part -> part.metadata.orEmpty().keys.any { it != KUAN_WEB_MESSAGE_ID } } ||
+        text.map { it.metadata?.string(KUAN_WEB_MESSAGE_ID) }.distinct().size > 1) return this
     val joined = text.joinToString("") { it.text }
     val hasImageAnchor = imageMarker.containsMatchIn(joined) || withImages && any {
         it is UIMessagePart.Text && it.nativeMarkdown()?.let(imageMarker::containsMatchIn) == true
     }
-    if (!hasImageAnchor && !joined.hasVisibleKuanTag()) return this
+    if (!hasImageAnchor && !joined.hasVisibleKuanTag() && !joined.hasVisibleKuanToken(kuanPresentationControl)) return this
     var replaced = false
     return mapNotNull { part ->
         if (part !is UIMessagePart.Text || part.text.isEmpty()) part
@@ -189,6 +212,31 @@ private fun List<UIMessagePart>.joinSplitKuanPresentation(withImages: Boolean): 
 }
 
 private fun UIMessagePart.Text.nativeMarkdown() = metadata?.string(KUAN_NATIVE_MARKDOWN)?.takeIf { it.length in 1..MAX_PRESENTATION }
+
+// A failed projection or a very large reply must not expose raw wire packets.
+private val fallbackPacket = Regex(
+    """\uE000DIL\d{0,9}(?:\uE001|(?=\r?$))|\uE200[a-z_][\w.-]{0,63}\uE202(?:[\w.-]{1,128}(?:\uE202[\w.-]{1,128}){0,31}(?:\uE201|(?=\s|$))|[^\r\n\uE000\uE200\uE201]{0,8192}\uE201)?|\uE200[a-z_][\w.-]{0,63}(?:\uE201|(?=\r?$))|[\uE000-\uF8FF]""",
+    setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
+)
+private val fallbackEscapes = Regex("""(?<!\\)\\u(?:\{(0{0,2}e(?:00[01]|20[0-9a-f]))\}|(e(?:00[01]|20[0-9a-f])))""", RegexOption.IGNORE_CASE)
+private val fallbackTag = Regex(
+    kuanPresentationTag.pattern + """(?:(?!&lt;)[^<>\r\n]){0,1024}?(?:>|&gt;)""",
+    RegexOption.IGNORE_CASE,
+)
+
+private fun fallbackKuanProse(source: String): String = buildString {
+    var cursor = 0
+    fun appendProse(prose: String) {
+        val normalized = fallbackEscapes.replace(prose) { it.groupValues.drop(1).first(String::isNotEmpty).toInt(16).toChar().toString() }
+        append(fallbackTag.replace(fallbackPacket.replace(normalized, ""), ""))
+    }
+    for (code in kuanPresentationCode.findAll(source)) {
+        appendProse(source.substring(cursor, code.range.first))
+        append(code.value)
+        cursor = code.range.last + 1
+    }
+    appendProse(source.substring(cursor))
+}
 
 internal fun UIMessagePart.Text.kuanFormSource() = metadata?.string(SOURCE)
 internal fun UIMessagePart.Text.kuanFormGroups() = metadata?.array(GROUPS).orEmpty().mapNotNull { it as? JsonObject }
@@ -213,7 +261,8 @@ internal fun publicKuanPresentationUrl(raw: String?): String? {
     if (!url.isHttps || url.port != 443 || '.' !in url.host || url.host.substringAfterLast('.').none(Char::isLetter) ||
             url.host.substringAfterLast('.') in setOf("local", "internal", "localhost") ||
             url.queryParameterNames.any { it.lowercase().let { name ->
-                name in setOf("token", "access_token", "authorization", "signature") || name.startsWith("x-amz-")
+                name in setOf("token", "access_token", "authorization", "signature", "sig", "key", "api_key") ||
+                    name.startsWith("x-amz-") || name.startsWith("x-goog-")
             } }
     ) return null
     return url.toString()
@@ -234,8 +283,9 @@ internal suspend fun projectKuanPresentation(
     streaming: Boolean = false,
     plain: Boolean = false,
     images: JsonArray = JsonArray(emptyList()),
+    presentation: JsonObject? = null,
 ): JsonObject? = withContext(Dispatchers.Default) {
-    if (source.length > MAX_PRESENTATION) return@withContext null
+    if (source.length > MAX_RICH_SOURCE) return@withContext null
     try {
         val script = bundledScript ?: scriptLock.withLock {
             bundledScript ?: withContext(Dispatchers.IO) {
@@ -243,14 +293,14 @@ internal suspend fun projectKuanPresentation(
             }.also { bundledScript = it }
         }
         quickJs(Dispatchers.Default) {
-            memoryLimit = 32L * 1024 * 1024
+            memoryLimit = if (source.length > MAX_PRESENTATION) 64L * 1024 * 1024 else 32L * 1024 * 1024
             maxStackSize = 256L * 1024
             // Budget trusted engine startup separately from parsing model-supplied data.
             evaluationTimeoutMillis = 2_000L
             evaluate<Unit>(script)
             evaluationTimeoutMillis = 400L
-            val result = evaluate<String>("JSON.stringify(KuanPresentation.project(${JsonPrimitive(source)}, $selections, $streaming, $plain, $images))")
-            if (result.length <= MAX_PRESENTATION * 2) KuanJson.parseToJsonElement(result).asObject() else null
+            val result = evaluate<String>("JSON.stringify(KuanPresentation.project(${JsonPrimitive(source)}, $selections, $streaming, $plain, $images, $presentation))")
+            if (result.length <= MAX_RICH_SOURCE * 3) KuanJson.parseToJsonElement(result).asObject() else null
         }
     } catch (e: CancellationException) {
         throw e
